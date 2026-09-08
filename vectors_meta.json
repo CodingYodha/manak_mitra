@@ -1,0 +1,272 @@
+[
+  {
+    "is_number": "IS 16102 (Part 1)",
+    "title": "Self-ballasted LED lamps for general lighting services - Safety requirements - एलईडी बल्ब",
+    "ics_code": "29.140.99",
+    "status": "ACTIVE",
+    "year": "2012",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=16102"
+  },
+  {
+    "is_number": "IS 16102 (Part 2)",
+    "title": "Self-ballasted LED lamps for general lighting services - Performance requirements - एलईडी लैम्प",
+    "ics_code": "29.140.99",
+    "status": "ACTIVE",
+    "year": "2014",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=16102-2"
+  },
+  {
+    "is_number": "IS 10322 (Part 5 Sec 1)",
+    "title": "Luminaires - Safety requirements - General",
+    "ics_code": "29.140.40",
+    "status": "ACTIVE",
+    "year": "2014",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=10322-5-1"
+  },
+  {
+    "is_number": "IS 2082",
+    "title": "Specification for electric water heaters",
+    "ics_code": "97.100.10",
+    "status": "ACTIVE",
+    "year": "1993",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=2082"
+  },
+  {
+    "is_number": "IS 302 (Part 1)",
+    "title": "Safety of household and similar electrical appliances - General requirements",
+    "ics_code": "97.180",
+    "status": "ACTIVE",
+    "year": "2008",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=302-1"
+  },
+  {
+    "is_number": "IS 9873 (Part 1)",
+    "title": "Safety of toys - Safety aspects related to mechanical and physical properties",
+    "ics_code": "97.200.50",
+    "status": "ACTIVE",
+    "year": "2019",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=9873-1"
+  },
+  {
+    "is_number": "IS 9873 (Part 2)",
+    "title": "Safety of toys - Flammability",
+    "ics_code": "97.200.50",
+    "status": "ACTIVE",
+    "year": "2019",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=9873-2"
+  },
+  {
+    "is_number": "IS 9873 (Part 3)",
+    "title": "Safety of toys - Migration of certain elements",
+    "ics_code": "97.200.50",
+    "status": "ACTIVE",
+    "year": "2019",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=9873-3"
+  },
+  {
+    "is_number": "IS 1417",
+    "title": "Methods of test for gold and gold alloys - Chemical analysis",
+    "ics_code": "39.060",
+    "status": "ACTIVE",
+    "year": "1999",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=1417"
+  },
+  {
+    "is_number": "IS 2112",
+    "title": "Hallmarking of gold jewellery",
+    "ics_code": "39.060",
+    "status": "ACTIVE",
+    "year": "2003",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=2112"
+  },
+  {
+    "is_number": "IS 4985",
+    "title": "Unplasticized PVC pipes for potable water supplies - Specification",
+    "ics_code": "23.040.20",
+    "status": "ACTIVE",
+    "year": "2000",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=4985"
+  },
+  {
+    "is_number": "IS 1239 (Part 1)",
+    "title": "Mild steel tubes - Specification",
+    "ics_code": "77.140.75",
+    "status": "ACTIVE",
+    "year": "2004",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=1239-1"
+  },
+  {
+    "is_number": "IS 2925",
+    "title": "Industrial safety helmets - Specification",
+    "ics_code": "13.340.20",
+    "status": "ACTIVE",
+    "year": "1984",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=2925"
+  },
+  {
+    "is_number": "IS 269",
+    "title": "Ordinary Portland cement 33 grade - Specification",
+    "ics_code": "91.100.10",
+    "status": "ACTIVE",
+    "year": "2015",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=269"
+  },
+  {
+    "is_number": "IS 694",
+    "title": "PVC insulated cables for working voltages up to and including 1100 V",
+    "ics_code": "29.060.20",
+    "status": "ACTIVE",
+    "year": "2010",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=694"
+  },
+  {
+    "is_number": "IS 3196 (Part 1)",
+    "title": "Welded low carbon steel cylinders for low pressure liquefiable gases - Water capacity 500L",
+    "ics_code": "23.020.30",
+    "status": "ACTIVE",
+    "year": "2002",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=3196-1"
+  },
+  {
+    "is_number": "IS 1361",
+    "title": "Steel windows for industrial buildings",
+    "ics_code": "91.060.50",
+    "status": "ACTIVE",
+    "year": "2002",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=1361"
+  },
+  {
+    "is_number": "IS 14543",
+    "title": "Packaged drinking water - Specification",
+    "ics_code": "67.160.20",
+    "status": "ACTIVE",
+    "year": "2016",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=14543"
+  },
+  {
+    "is_number": "IS 9103",
+    "title": "Admixtures for concrete - Specification",
+    "ics_code": "91.100.30",
+    "status": "ACTIVE",
+    "year": "1999",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=9103"
+  },
+  {
+    "is_number": "IS 1554 (Part 1)",
+    "title": "PVC insulated heavy duty electric cables for working voltages up to 1100 V",
+    "ics_code": "29.060.20",
+    "status": "ACTIVE",
+    "year": "1988",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=1554-1"
+  },
+  {
+    "is_number": "IS 13410",
+    "title": "Household refrigerating appliances - Refrigerators with or without frozen food storage compartment",
+    "ics_code": "97.040.30",
+    "status": "ACTIVE",
+    "year": "2010",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=13410"
+  },
+  {
+    "is_number": "IS 616",
+    "title": "Specification for electric fans and regulators",
+    "ics_code": "23.120",
+    "status": "ACTIVE",
+    "year": "2017",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=616"
+  },
+  {
+    "is_number": "IS 8827",
+    "title": "Recommendations for building bye-laws",
+    "ics_code": "91.040.01",
+    "status": "ACTIVE",
+    "year": "1978",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=8827"
+  },
+  {
+    "is_number": "IS 13428",
+    "title": "Packaged natural mineral water - Specification",
+    "ics_code": "67.160.20",
+    "status": "ACTIVE",
+    "year": "2005",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=13428"
+  },
+  {
+    "is_number": "IS 9000 (Part 1)",
+    "title": "Basic environmental testing procedures for electronic and electrical items - General",
+    "ics_code": "19.040",
+    "status": "ACTIVE",
+    "year": "1977",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=9000-1"
+  },
+  {
+    "is_number": "IS 16046 (Part 1)",
+    "title": "Road vehicles - Diagnostic communication over Controller Area Network",
+    "ics_code": "43.040.15",
+    "status": "ACTIVE",
+    "year": "2018",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=16046-1"
+  },
+  {
+    "is_number": "IS 11592",
+    "title": "Selection of weirs and flumes for measurement of flow in open channels",
+    "ics_code": "17.120.20",
+    "status": "ACTIVE",
+    "year": "2000",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=11592"
+  },
+  {
+    "is_number": "IS 1489 (Part 1)",
+    "title": "Portland pozzolana cement - Specification - Fly ash based",
+    "ics_code": "91.100.10",
+    "status": "ACTIVE",
+    "year": "2015",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=1489-1"
+  },
+  {
+    "is_number": "IS 7098 (Part 1)",
+    "title": "Cross-linked polyethylene insulated thermoplastic sheathed cables up to 1100 V",
+    "ics_code": "29.060.20",
+    "status": "ACTIVE",
+    "year": "2011",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=7098-1"
+  },
+  {
+    "is_number": "IS 16878",
+    "title": "Specification for photovoltaic modules - Safety requirements",
+    "ics_code": "27.160",
+    "status": "ACTIVE",
+    "year": "2018",
+    "is_free": false,
+    "purchase_url": "https://standardsbis.in/StandardsDetail.aspx?pid=16878"
+  }
+]

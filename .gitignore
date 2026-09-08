@@ -1,0 +1,37 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Model cache (downloaded at runtime)
+# vectors.npy and vectors_meta.json are COMMITTED (not ignored)
+# .cache/
+
+# Database — committed after seeding
+# manak.db is COMMITTED after seeding
+
+# WhatsApp session (never commit credentials)
+wa-session/
+
+# Environment
+.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Evaluation outputs — commit results.txt
+# eval/results.txt  <- keep
+
+# Exclude docs, presentations, research notes, and spreadsheets
+*.pdf
+*.xlsx
+*.md
+!README.md
