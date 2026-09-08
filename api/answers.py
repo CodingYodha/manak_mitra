@@ -1,4 +1,4 @@
-﻿"""
+"""
 Manak Mitra — Answer Functions
 Ownership split:
   recommend()          ← Shivaprasad
@@ -67,7 +67,7 @@ def recommend(description: str) -> dict:
     return {
         "hits":       hits,
         "citations":  citations,
-        "_top_score": hits[0]["score"],
+        "_top_score": hits[0].get("dense_score", hits[0]["score"]),
     }
 
 

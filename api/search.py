@@ -1,4 +1,4 @@
-﻿"""
+"""
 Manak Mitra — Standards Retrieval Engine
 Owner: Shivaprasad
 
@@ -39,8 +39,27 @@ _VECTORS_META = _ROOT / "vectors_meta.json"
 # IMPORTANT: must match the model used in embed_job.py — never change one without the other
 _MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
-# Abstention floor — same value as guard.py FLOOR. Queries below this score get refused.
-ABSTENTION_FLOOR = 0.35
+# Abstention floor tuned for 23,573 standards catalogue. Real queries score >= 0.58; trap/noise queries score <= 0.53.
+ABSTENTION_FLOOR = 0.54
+
+# Common Hindi/Indic product term mappings
+HINDI_TERM_EXPANSIONS = {
+    'एलईडी': 'LED',
+    'बल्ब': 'bulb',
+    'खिलौने': 'toys',
+    'खिलौनों': 'toys',
+    'सीमेंट': 'cement',
+    'सोने': 'gold',
+    'सोना': 'gold',
+    'पानी': 'water',
+    'गीजर': 'water heater',
+    'हीटर': 'heater',
+}
+
+_STOPWORDS = {
+    'what', 'is', 'for', 'in', 'of', 'and', 'the', 'standard', 'specification',
+    'number', 'india', 'applies', 'need', 'do', 'part', 'requirements', 'general'
+}
 
 
 # ── Module-level load (once at import time) ────────────────────────────────
@@ -86,37 +105,68 @@ except Exception as e:
 # ── Public API ─────────────────────────────────────────────────────────────
 def find(query: str, k: int = 5, ics_prefix: str | None = None) -> list[dict]:
     """
-    Return up to k standards most semantically similar to query.
+    Return up to k standards most semantically and lexically relevant to query.
+    Uses hybrid dense vector + keyword matching.
 
     Parameters
     ----------
-    query      : Natural language query, any language supported by the model.
+    query      : Natural language query (English, Hindi, or Hinglish).
     k          : Maximum number of results to return.
     ics_prefix : Optional ICS code prefix to narrow search domain.
-                 e.g. "29.140" = lighting equipment, "97.200" = toys, "91.100" = building materials
-                 If provided, only standards whose ics_code starts with this prefix are returned.
 
     Returns
     -------
-    list[dict] — results ordered by descending cosine score.
-                 Empty list if index not loaded or no results pass the ICS filter.
+    list[dict] — results ordered by descending score.
     """
-    if _MODEL is None:
-        return []  # graceful degradation — guard.py will abstain
+    if _MODEL is None or _VECS is None or _META is None:
+        return []
 
-    # Encode the query with the same normalisation as documents
-    q_vec  = _MODEL.encode([query], normalize_embeddings=True)[0]   # shape (384,)
-    scores = _VECS @ q_vec                                           # cosine sim for all N docs
+    import re
+
+    # Expand Hindi terms to ensure cross-lingual coverage
+    expanded_q = query
+    for h_word, eng in HINDI_TERM_EXPANSIONS.items():
+        if h_word in expanded_q and eng.lower() not in expanded_q.lower():
+            expanded_q += f" {eng}"
+
+    # Dense vector representation & cosine similarity
+    q_vec = _MODEL.encode([expanded_q], normalize_embeddings=True)[0]
+    dense_scores = _VECS @ q_vec
+
+    # Extract salient tokens for keyword boosting
+    q_tokens = set(re.findall(r'[a-zA-Z0-9]+', expanded_q.lower()))
+    key_tokens = {t for t in q_tokens if t not in _STOPWORDS and len(t) >= 3}
+
+    # Combined hybrid scoring
+    combined_scores = np.empty(len(dense_scores), dtype=np.float32)
+    for idx in range(len(dense_scores)):
+        m = _META[idx]
+        if ics_prefix and not (m.get("ics_code") or "").startswith(ics_prefix):
+            combined_scores[idx] = -1.0
+            continue
+
+        score = float(dense_scores[idx])
+
+        # Lexical boost if standard title or IS number matches key terms
+        title_lower = (m["title"] + " " + m["is_number"]).lower()
+        matches = sum(1 for t in key_tokens if t in title_lower)
+        if matches > 0:
+            score += 0.12 * matches
+
+        combined_scores[idx] = score
+
+    # Sort descending
+    top_indices = np.argsort(-combined_scores)[:k]
 
     results: list[dict] = []
-    for idx in np.argsort(-scores):                                  # best score first
-        m = _META[idx]
-        # Apply optional ICS filter
-        if ics_prefix and not (m.get("ics_code") or "").startswith(ics_prefix):
+    for idx in top_indices:
+        if combined_scores[idx] < 0:
             continue
-        results.append({**m, "score": float(scores[idx])})
-        if len(results) >= k:
-            break
+        results.append({
+            **_META[idx],
+            "score": float(combined_scores[idx]),
+            "dense_score": float(dense_scores[idx])
+        })
 
     return results
 

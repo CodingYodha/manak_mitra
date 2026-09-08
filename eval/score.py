@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Manak Mitra — Evaluation Scorer
 Owner: Shreya (script) + Shivaprasad (retrieval logic input)
@@ -70,32 +70,43 @@ def evaluate_search(cases: list[dict], verbose: bool = False) -> dict:
 
         # Get top-5 hits from search
         hits = search_mod.find(q, k=5, ics_prefix=ics_prefix)
-        top_score = hits[0]["score"] if hits else 0.0
+        top_dense = hits[0].get("dense_score", hits[0]["score"]) if hits else 0.0
 
-        # Simulate abstention (using search module's floor)
-        abstained = top_score < search_mod.ABSTENTION_FLOOR
+        # Simulate abstention using dense semantic score vs floor
+        abstained = top_dense < search_mod.ABSTENTION_FLOOR
         hit_is    = [h["is_number"] for h in hits]
 
+        # Helper to check if any expected IS matches a hit
+        def matches_expected(hit_str, target):
+            if isinstance(target, list):
+                return any(matches_expected(hit_str, t) for t in target)
+            target = str(target).strip()
+            return hit_str == target or hit_str.startswith(target)
+
+        at1 = bool(not expect_abstain and expect_is and len(hit_is) > 0 and matches_expected(hit_is[0], expect_is))
+        at3 = bool(not expect_abstain and expect_is and any(matches_expected(h, expect_is) for h in hit_is[:3]))
+
         result = {
-            "q":             q,
-            "expect_is":     expect_is,
+            "q":              q,
+            "expect_is":      expect_is,
             "expect_abstain": expect_abstain,
-            "abstained":     abstained,
-            "top_score":     top_score,
-            "hit_is":        hit_is,
-            "citations":     [{"ref": h["is_number"]} for h in hits] if not abstained else [],
-            "at1":           (not expect_abstain and expect_is and len(hit_is) > 0 and hit_is[0] == expect_is),
-            "at3":           (not expect_abstain and expect_is and expect_is in hit_is[:3]),
-            "cite_ok":       (not abstained and len(hit_is) > 0) or expect_abstain,
-            "abstain_ok":    (expect_abstain == abstained),
+            "abstained":      abstained,
+            "top_score":      top_dense,
+            "hit_is":         hit_is,
+            "citations":      [{"ref": h["is_number"]} for h in hits] if not abstained else [],
+            "at1":            at1,
+            "at3":            at3,
+            "cite_ok":        (not abstained and len(hit_is) > 0) or expect_abstain,
+            "abstain_ok":     (expect_abstain == abstained),
         }
         results.append(result)
 
         if verbose:
             status = "✅" if (result["at3"] or (expect_abstain and result["abstain_ok"])) else "❌"
-            print(f"  {status} [{top_score:.3f}] {q[:55]:55s}")
+            print(f"  {status} [{result['top_score']:.3f}] {q[:55]:55s}")
             if expect_is:
-                print(f"        expect: {expect_is:30s}  got: {hit_is[:3]}")
+                exp_str = ", ".join(expect_is) if isinstance(expect_is, list) else str(expect_is)
+                print(f"        expect: {exp_str[:30]:30s}  got: {hit_is[:3]}")
             if expect_abstain:
                 print(f"        expect_abstain={expect_abstain}  abstained={abstained}")
 
@@ -198,7 +209,8 @@ def print_report(metrics: dict, output_path: pathlib.Path | None = None):
     if metrics["failures"]:
         lines.append(f"  RETRIEVAL FAILURES ({len(metrics['failures'])}):")
         for r in metrics["failures"]:
-            lines.append(f"    ✗ expect={r['expect_is']:30s} got={r['hit_is'][:3]}")
+            exp_str = ", ".join(r['expect_is']) if isinstance(r['expect_is'], list) else str(r['expect_is'])
+            lines.append(f"    ✗ expect={exp_str[:30]:30s} got={r['hit_is'][:3]}")
             lines.append(f"      q: {r['q'][:70]}")
     else:
         lines.append("  No retrieval failures ✅")

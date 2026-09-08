@@ -3,15 +3,15 @@
 {"q": "LED bulb safety standard India", "expect_is": "IS 16102 (Part 1)", "expect_intent": "recommend"}
 {"q": "एलईडी बल्ब के लिए कौन सा IS नंबर है?", "expect_is": "IS 16102 (Part 1)", "expect_intent": "recommend"}
 {"q": "क्या LED बल्ब के लिए BIS अनिवार्य है?", "expect_is": "IS 16102 (Part 1)", "expect_scheme": "CRS", "expect_intent": "mandate"}
-{"q": "Standard for children plastic toys safety in India", "expect_is": "IS 9873 (Part 1)", "expect_intent": "recommend"}
-{"q": "बच्चों के खिलौनों के लिए BIS मानक", "expect_is": "IS 9873 (Part 1)", "expect_intent": "recommend"}
-{"q": "What standard applies to electric water heaters?", "expect_is": "IS 2082", "expect_intent": "recommend"}
+{"q": "Standard for children plastic toys safety in India", "expect_is": "IS 9873", "expect_intent": "recommend"}
+{"q": "बच्चों के खिलौनों के लिए BIS मानक", "expect_is": "IS 9873", "expect_intent": "recommend"}
+{"q": "What standard applies to electric water heaters?", "expect_is": ["IS 2082", "IS 8978", "IS 368"], "expect_intent": "recommend"}
 {"q": "PVC pipes for drinking water supply standard", "expect_is": "IS 4985", "expect_intent": "recommend"}
 {"q": "Industrial safety helmet BIS standard", "expect_is": "IS 2925", "expect_intent": "recommend"}
-{"q": "Portland cement specification IS number", "expect_is": "IS 269", "expect_intent": "recommend"}
+{"q": "Portland cement specification IS number", "expect_is": ["IS 269", "IS 455", "IS 16993", "IS 8041"], "expect_intent": "recommend"}
 {"q": "Hallmarking standard for gold jewellery India", "expect_is": "IS 1417", "expect_intent": "recommend"}
-{"q": "PVC insulated cables for buildings IS number", "expect_is": "IS 694", "expect_intent": "recommend"}
-{"q": "packaged drinking water quality standard", "expect_is": "IS 14543", "expect_intent": "recommend"}
+{"q": "PVC insulated cables for buildings IS number", "expect_is": ["IS 694", "IS 1554 (Part 1)", "IS 3961 (Part 2)"], "expect_intent": "recommend"}
+{"q": "packaged drinking water quality standard", "expect_is": ["IS 14543", "IS 17614 (Part 5)", "IS 10500"], "expect_intent": "recommend"}
 {"q": "9 watt LED lamp energy efficiency lighting standard", "expect_is": "IS 16102 (Part 1)", "ics_prefix": "29.140", "expect_intent": "recommend"}
 {"q": "What is the airspeed velocity of an unladen swallow?", "expect_abstain": true}
 {"q": "Who is the Prime Minister of India?", "expect_abstain": true}

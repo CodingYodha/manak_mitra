@@ -1,19 +1,17 @@
 
 ============================================================
   MANAK MITRA — EVALUATION RESULTS
-  2026-09-09 00:59:24
+  2026-09-09 02:49:43
 ============================================================
   Total cases:         20
   IS-retrieval cases:  15
   Abstention cases:    5
 
-  accuracy@1:        0.80  (target ≥ 0.60)
-  accuracy@3:        0.93  (target ≥ 0.80)
+  accuracy@1:        0.73  (target ≥ 0.60)
+  accuracy@3:        1.00  (target ≥ 0.80)
   citation_correct:  0.93  (target ≥ 0.90)
   abstention_prec:   1.00  (target = 1.00)
 
-  RETRIEVAL FAILURES (1):
-    ✗ expect=IS 16102 (Part 1)              got=['IS 616', 'IS 694', 'IS 1554 (Part 1)']
-      q: एलईडी बल्ब के लिए कौन सा IS नंबर है?
+  No retrieval failures ✅
   No abstention failures ✅
 ============================================================
