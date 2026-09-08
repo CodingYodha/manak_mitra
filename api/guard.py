@@ -3,8 +3,9 @@ import re
 # Strict regex matching 'IS' followed by 3-5 digits (e.g., IS 16102, IS 1417)
 IS_PAT = re.compile(r"IS\s*\d{3,5}", re.I)
 
-# The tuned abstention floor
-FLOOR = 0.35
+# The tuned abstention floor — kept in sync with search.py ABSTENTION_FLOOR
+# Tuned for the 23,573 BIS catalogue: real queries >= 0.58, noise/trap <= 0.53
+FLOOR = 0.54
 
 def enforce(text: str, allowed_refs: list[str]) -> str:
     """
