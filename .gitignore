@@ -33,5 +33,4 @@ Thumbs.db
 # Exclude docs, presentations, research notes, and spreadsheets
 *.pdf
 *.xlsx
-*.md
 !README.md
