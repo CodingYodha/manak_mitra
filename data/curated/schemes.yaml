@@ -1,0 +1,66 @@
+CRS:
+  name: Compulsory Registration Scheme
+  applies_when: Product appears in the Electronics & IT Goods QCO
+  steps:
+    - id: 1
+      title: Test at a BIS-recognised lab
+      detail: Sample tested against the applicable IS
+      duration_days: [15, 30]
+    - id: 2
+      title: Apply online on the CRS portal
+      duration_days: [1, 2]
+    - id: 3
+      title: BIS grants registration and an R-number
+      duration_days: [15, 20]
+  fees:
+    application: "₹1,000"
+    source_url: https://crsbis.in/
+    retrieved_on: 2026-09-08
+ISI:
+  name: ISI Mark Scheme
+  applies_when: Product requires mandatory ISI certification
+  steps:
+    - id: 1
+      title: Testing of samples
+      duration_days: [30, 60]
+    - id: 2
+      title: Factory inspection
+      duration_days: [10, 15]
+    - id: 3
+      title: Grant of License
+      duration_days: [20, 30]
+  fees:
+    application: "₹1,000"
+    source_url: https://bis.gov.in/isi
+    retrieved_on: 2026-09-08
+HALLMARKING:
+  name: Hallmarking Scheme
+  applies_when: Precious metals like gold and silver
+  steps:
+    - id: 1
+      title: Assaying
+      duration_days: [1, 2]
+    - id: 2
+      title: Hallmarking at A&H center
+      duration_days: [1, 2]
+  fees:
+    application: "₹2,000"
+    source_url: https://bis.gov.in/hallmarking
+    retrieved_on: 2026-09-08
+FMCS:
+  name: Foreign Manufacturers Certification Scheme
+  applies_when: Foreign manufacturer applying for BIS standard mark
+  steps:
+    - id: 1
+      title: Submission of Application
+      duration_days: [5, 10]
+    - id: 2
+      title: Factory Inspection and Sample Draw
+      duration_days: [30, 45]
+    - id: 3
+      title: Grant of License
+      duration_days: [30, 60]
+  fees:
+    application: "$1,000"
+    source_url: https://bis.gov.in/fmcs
+    retrieved_on: 2026-09-08

@@ -30,7 +30,12 @@ Thumbs.db
 # Evaluation outputs — commit results.txt
 # eval/results.txt  <- keep
 
+# Web frontend
+web/node_modules/
+node_modules/
+npm-debug.log
+
 # Exclude docs, presentations, research notes, and spreadsheets
 *.pdf
 *.xlsx
-!README.md
+*.pptx

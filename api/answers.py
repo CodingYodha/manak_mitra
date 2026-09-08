@@ -1,3 +1,4 @@
+from typing import Optional
 """
 Manak Mitra — Answer Functions
 Ownership split:
@@ -14,6 +15,9 @@ The _top_score key is internal — guard.py reads it, the API response omits it.
 """
 import pathlib
 import sys
+import os
+import httpx
+import yaml
 
 # ── Shivaprasad: recommend() ───────────────────────────────────────────────
 # search.py is in the same api/ package; adjust path for both direct and uvicorn runs
@@ -23,8 +27,10 @@ if str(_ROOT) not in sys.path:
 
 try:
     import search
+    import store
 except ImportError:
     search = None  # type: ignore[assignment]
+    store = None
 
 
 def recommend(description: str) -> dict:
@@ -77,29 +83,54 @@ def mandate(term: str) -> dict:
     QCO mandate lookup. NO MODEL — pure SQL. Must never be wrong.
     Owner: Rudra. Do not edit this function.
     """
-    # TODO: Rudra implements this
-    # import store
-    # rows = store.mandate_for(term)
-    # ...
-    raise NotImplementedError("mandate() is implemented by Rudra in api/answers.py")
+    if not store:
+        return {"mandatory": None, "citations": []}
+        
+    rows = store.mandate_for(term)
+    if not rows:
+        return {"mandatory": None, "citations": []}
+    
+    r = rows[0]
+    return {
+        "mandatory": True, 
+        "scheme": r["scheme"], 
+        "is_number": r["is_number"],
+        "effective_on": r["effective_on"],
+        "citations": [{
+            "kind": "qco", 
+            "ref": r["qco_title"],
+            "url": r["gazette_url"], 
+            "retrieved_on": r["retrieved_on"]
+        }]
+    }
 
 
 # ── Rudra: scheme() ───────────────────────────────────────────────────────
-def scheme(name: str) -> dict | None:
+def scheme(name: str) -> Optional[dict]:
     """
     Deterministic walk of Jay's schemes.yaml decision tree.
     Owner: Rudra. Do not edit this function.
     """
-    raise NotImplementedError("scheme() is implemented by Rudra in api/answers.py")
+    path = _ROOT / "data" / "curated" / "schemes.yaml"
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        schemes_data = yaml.safe_load(f)
+    if not schemes_data:
+        return None
+    return schemes_data.get(name.upper())
 
 
 # ── Rudra: labs() ─────────────────────────────────────────────────────────
-def labs(city: str | None = None, category: str | None = None) -> dict:
+def labs(city: Optional[str] = None, category: Optional[str] = None) -> dict:
     """
     Lab lookup: nearest recognised BIS lab filtered by category.
     Owner: Rudra. Do not edit this function.
     """
-    raise NotImplementedError("labs() is implemented by Rudra in api/answers.py")
+    if not store:
+        return {"labs": []}
+    results = store.get_nearest_labs(city or "", category or "", limit=3)
+    return {"labs": results}
 
 
 # ── Rudra: passport() ────────────────────────────────────────────────────
@@ -108,16 +139,40 @@ def passport(product: str) -> dict:
     Compliance Passport: composes mandate() + recommend() + labs() + scheme().
     Owner: Rudra. Build this LAST once the other four work.
     """
-    raise NotImplementedError("passport() is implemented by Rudra in api/answers.py")
+    m = mandate(product)
+    r = recommend(product)
+    
+    sch = None
+    if m.get("scheme"):
+        sch = scheme(m["scheme"])
+    
+    l = labs(category=product)
+    
+    return {
+        "product": product,
+        "mandate": m,
+        "recommendation": r,
+        "scheme": sch,
+        "labs": l["labs"]
+    }
 
 
 # ── Rudra: graph() ───────────────────────────────────────────────────────
-def graph(highlight: list[str] | None = None) -> dict:
+def graph(highlight: Optional[list[str]] = None) -> dict:
     """
     Returns graph.json data plus highlight_nodes for the current answer.
     Owner: Rudra.
     """
-    raise NotImplementedError("graph() is implemented by Rudra in api/answers.py")
+    if not store:
+        return {"nodes": [], "links": [], "highlight_nodes": highlight or []}
+        
+    standards = store.get_all_standards()
+    nodes = []
+    for s in standards:
+        group = s.get("ics_code", "").split(".")[0] if s.get("ics_code") else "0"
+        nodes.append({"id": s["is_number"], "group": group, "label": s["title"]})
+        
+    return {"nodes": nodes, "links": [], "highlight_nodes": highlight or []}
 
 
 # ── Rudra: phrase() ──────────────────────────────────────────────────────
@@ -127,11 +182,38 @@ def phrase(facts: dict, question: str) -> str:
     It adds NO new facts — only rephrases what retrieval returned.
     Owner: Rudra.
     """
-    raise NotImplementedError("phrase() is implemented by Rudra in api/answers.py")
+    p = (f"Answer using ONLY these facts: {facts}\n"
+         f"Question: {question}\n"
+         "Two sentences max. Never state an IS number that is not in the facts.")
+    
+    azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
+    if azure_key:
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+        api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+        url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
+        
+        try:
+            r = httpx.post(url, headers={"api-key": azure_key}, json={
+                "messages": [{"role": "user", "content": p}],
+                "max_tokens": 150,
+                "temperature": 0.0
+            }, timeout=10.0)
+            if r.status_code == 200:
+                return r.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            print(f"LLM Error: {e}")
+            pass
+            
+    # Deterministic fallback
+    is_numbers = [c["ref"] for c in facts.get("citations", [])]
+    is_str = ", ".join(is_numbers) if is_numbers else "No standard found"
+    return f"Based on official sources, the applicable standard is {is_str}. Please verify with the official BIS portal."
 
 
 # ── Quick self-test for recommend() ──────────────────────────────────────
 if __name__ == "__main__":
+    if store: store.init()
     print("Testing recommend()…")
     r = recommend("LED bulb")
     print(f"  _top_score: {r['_top_score']:.3f}")

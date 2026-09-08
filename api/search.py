@@ -1,3 +1,4 @@
+from typing import Optional
 """
 Manak Mitra — Standards Retrieval Engine
 Owner: Shivaprasad
@@ -86,10 +87,10 @@ def _load_index():
 
 
 # Try to load at import time; degrade gracefully if index missing
-_MODEL: SentenceTransformer | None = None
-_VECS:  np.ndarray | None = None
-_META:  list[dict] | None = None
-_LOAD_ERROR: str | None = None
+_MODEL: Optional[SentenceTransformer] = None
+_VECS:  Optional[np.ndarray] = None
+_META:  Optional[list[dict]] = None
+_LOAD_ERROR: Optional[str] = None
 
 try:
     _MODEL, _VECS, _META = _load_index()
@@ -103,7 +104,7 @@ except Exception as e:
 
 
 # ── Public API ─────────────────────────────────────────────────────────────
-def find(query: str, k: int = 5, ics_prefix: str | None = None) -> list[dict]:
+def find(query: str, k: int = 5, ics_prefix: Optional[str] = None) -> list[dict]:
     """
     Return up to k standards most semantically and lexically relevant to query.
     Uses hybrid dense vector + keyword matching.
@@ -176,7 +177,7 @@ def index_loaded() -> bool:
     return _MODEL is not None
 
 
-def load_error() -> str | None:
+def load_error() -> Optional[str]:
     """Returns the error message if index failed to load, else None."""
     return _LOAD_ERROR
 
