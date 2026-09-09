@@ -12,8 +12,9 @@ if _env_file.exists():
                 _k, _v = _l.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip())
 
+import json
 from fastapi import FastAPI, UploadFile, File, Form, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from api import answers, guard, store, marks, lang as lang_utils
 from typing import Optional
@@ -80,8 +81,7 @@ def on_startup():
         print(f"[main] Graph load skipped: {e}")
 
 
-@app.post("/chat")
-def chat(q: str, lang: str = "en", channel: str = "web"):
+def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
     is_hi = lang_utils.is_hindi(q) or lang == "hi"
     user_lang = "hi" if is_hi else lang
 
@@ -116,15 +116,17 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
                 "How can I help with your compliance today?"
             )
 
-        store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
-                  intent=intent, matched_is=None, top_score=1.0, abstained=0)
-
         return {
-            "answer": greeting_text,
             "intent": intent,
+            "is_hi": is_hi,
+            "user_lang": user_lang,
+            "query_en": query_en,
+            "facts": {},
+            "top": 1.0,
             "abstained": False,
             "citations": [],
-            "highlight_nodes": [],
+            "refs": [],
+            "direct_answer": greeting_text,
             "verification": None,
             "passport_url": ""
         }
@@ -146,16 +148,17 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
             answer_text = lang_utils.translate(answer_text, src="en", tgt="hi")
         refs = list(dict.fromkeys([c["ref"] for c in citations if "ref" in c]))
 
-        store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
-                  intent=intent, matched_is=refs[0] if refs else None,
-                  top_score=1.0, abstained=0)
-
         return {
-            "answer": answer_text,
             "intent": intent,
+            "is_hi": is_hi,
+            "user_lang": user_lang,
+            "query_en": query_en,
+            "facts": facts,
+            "top": 1.0,
             "abstained": False,
             "citations": citations,
-            "highlight_nodes": refs,
+            "refs": refs,
+            "direct_answer": answer_text,
             "verification": mark_res,
             "passport_url": ""
         }
@@ -166,7 +169,6 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
 
     # ── 3. Laboratory Lookup ────────────────────────────────────────────────
     elif intent == "labs":
-        # Check if query references a specific standard or product
         rec = answers.recommend(query_en)
         top_is = rec["hits"][0]["is_number"] if rec.get("hits") else None
         facts = answers.labs(city=city, category=query_en, is_number=top_is)
@@ -228,31 +230,79 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
     else:
         top = facts.get("_top_score", 0.0)
 
-    if guard.should_abstain(top):
-        refusal_answer = lang_utils.translate(guard.REFUSAL, src="en", tgt="hi") if is_hi else guard.REFUSAL
-        store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
-                  intent=intent, matched_is=None, top_score=top, abstained=1)
-        return {
-            "answer": refusal_answer,
-            "intent": intent,
-            "abstained": True,
-            "citations": []
-        }
-
     citations = facts.get("citations", [])
     refs = list(dict.fromkeys([c["ref"] for c in citations if "ref" in c]))
+    passport_url = f"/passport/{query_en}" if intent in ["mandate", "recommend", "passport"] else ""
+
+    if guard.should_abstain(top):
+        refusal_answer = lang_utils.translate(guard.REFUSAL, src="en", tgt="hi") if is_hi else guard.REFUSAL
+        return {
+            "intent": intent,
+            "is_hi": is_hi,
+            "user_lang": user_lang,
+            "query_en": query_en,
+            "facts": facts,
+            "top": top,
+            "abstained": True,
+            "citations": [],
+            "refs": [],
+            "direct_answer": refusal_answer,
+            "passport_url": ""
+        }
+
+    return {
+        "intent": intent,
+        "is_hi": is_hi,
+        "user_lang": user_lang,
+        "query_en": query_en,
+        "facts": facts,
+        "top": top,
+        "abstained": False,
+        "citations": citations,
+        "refs": refs,
+        "direct_answer": None,
+        "passport_url": passport_url
+    }
+
+
+@app.post("/chat")
+def chat(q: str, lang: str = "en", channel: str = "web"):
+    res = _evaluate_query(q, lang, channel)
+    intent = res["intent"]
+    user_lang = res["user_lang"]
+    refs = res["refs"]
+    top = res["top"]
+    abstained = res["abstained"]
+    citations = res["citations"]
+
+    store.log(
+        ts=datetime.datetime.now().isoformat(),
+        channel=channel,
+        language=user_lang,
+        intent=intent,
+        matched_is=refs[0] if refs else None,
+        top_score=top,
+        abstained=1 if abstained else 0
+    )
+
+    if res["direct_answer"] is not None:
+        return {
+            "answer": res["direct_answer"],
+            "intent": intent,
+            "abstained": abstained,
+            "citations": citations,
+            "highlight_nodes": refs,
+            "verification": res.get("verification"),
+            "passport_url": res["passport_url"]
+        }
 
     # Grounded Phrasing + Hallucination Enforcer
-    raw_answer = answers.phrase(facts, query_en)
+    raw_answer = answers.phrase(res["facts"], res["query_en"])
     text = guard.enforce(raw_answer, refs)
 
     # Translate response back to Hindi if input was vernacular
-    if is_hi:
+    if res["is_hi"]:
         text = lang_utils.translate(text, src="en", tgt="hi")
-
-    store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
-              intent=intent, matched_is=refs[0] if refs else None,
-              top_score=top, abstained=0)
 
     return {
         "answer": text,
@@ -260,8 +310,55 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
         "abstained": False,
         "citations": citations,
         "highlight_nodes": refs,
-        "passport_url": f"/passport/{query_en}" if intent in ["mandate", "recommend", "passport"] else ""
+        "passport_url": res["passport_url"]
     }
+
+
+def _chat_event_generator(q: str, lang: str = "en", channel: str = "web"):
+    res = _evaluate_query(q, lang, channel)
+    intent = res["intent"]
+    user_lang = res["user_lang"]
+    refs = res["refs"]
+    top = res["top"]
+    abstained = res["abstained"]
+    citations = res["citations"]
+    passport_url = res["passport_url"]
+
+    store.log(
+        ts=datetime.datetime.now().isoformat(),
+        channel=channel,
+        language=user_lang,
+        intent=intent,
+        matched_is=refs[0] if refs else None,
+        top_score=top,
+        abstained=1 if abstained else 0
+    )
+
+    if res["direct_answer"] is not None:
+        for word in res["direct_answer"].split(" "):
+            yield f"data: {json.dumps({'t': word + ' '})}\n\n"
+    else:
+        for chunk in answers.phrase_stream(res["facts"], res["query_en"], lang="hi" if res["is_hi"] else "en"):
+            yield f"data: {json.dumps({'t': chunk})}\n\n"
+
+    meta_payload = {
+        "citations": citations,
+        "abstained": abstained,
+        "intent": intent,
+        "highlight_nodes": refs,
+        "passport_url": passport_url,
+        "verification": res.get("verification")
+    }
+    yield f"event: meta\ndata: {json.dumps(meta_payload)}\n\n"
+    yield "event: done\ndata: {}\n\n"
+
+
+@app.api_route("/chat/stream", methods=["GET", "POST"])
+def chat_stream(q: str, lang: str = "en", channel: str = "web"):
+    return StreamingResponse(
+        _chat_event_generator(q, lang, channel),
+        media_type="text/event-stream"
+    )
 
 
 @app.post("/verify/mark")

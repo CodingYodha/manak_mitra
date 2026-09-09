@@ -325,79 +325,187 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
       timestamp: 'Now'
     };
 
+    const botMsgId = Date.now() + 1;
+
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setLoading(true);
 
+    // Create an empty bot message that will be filled by streaming tokens
+    const emptyBotMsg = {
+      id: botMsgId,
+      sender: 'bot',
+      text: '',
+      citations: [],
+      abstained: false,
+      intent: '',
+      highlight_nodes: [],
+      passport_url: '',
+      product: q,
+      timestamp: 'Now',
+      isStreaming: true
+    };
+
+    setMessages((prev) => [...prev, emptyBotMsg]);
+
     try {
-      // 1. Send query to real FastAPI backend on port 8000
-      const response = await fetch(apiUrl(`/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`), {
-        method: 'POST'
-      });
+      // Use SSE streaming endpoint
+      const response = await fetch(
+        apiUrl(`/chat/stream?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`),
+        { method: 'POST' }
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP error ${response.status}`);
       }
 
-      const data = await response.json();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulatedText = '';
 
-      const botMsg = {
-        id: Date.now() + 1,
-        sender: 'bot',
-        text: data.answer,
-        citations: data.citations || [],
-        abstained: data.abstained || false,
-        intent: data.intent,
-        highlight_nodes: data.highlight_nodes || [],
-        passport_url: data.passport_url || '',
-        product: q,
-        timestamp: 'Now'
-      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      setMessages((prev) => [...prev, botMsg]);
-    } catch (err) {
-      console.log('Using client-side compliance response fallback:', err);
-      // 2. Intelligent client-side fallback (Guarantees demo reliability)
-      const qLower = q.toLowerCase();
-      let match = null;
+        buffer += decoder.decode(value, { stream: true });
 
-      if (qLower.includes('led') || qLower.includes('एलईडी') || qLower.includes('bulb')) {
-        match = FALLBACK_ANSWERS['led'];
-      } else if (qLower.includes('toy') || qLower.includes('खिलौने') || qLower.includes('plastic')) {
-        match = FALLBACK_ANSWERS['toy'];
-      } else if (
-        qLower.includes('gold') ||
-        qLower.includes('ring') ||
-        qLower.includes('हॉलमार्क') ||
-        qLower.includes('huid') ||
-        qLower.includes('jewellery')
-      ) {
-        match = FALLBACK_ANSWERS['gold'];
-      } else if (qLower.includes('swallow') || qLower.includes('airspeed') || qLower.includes('weather') || qLower.includes('joke')) {
-        match = FALLBACK_ANSWERS['swallow'];
-      } else {
-        match = {
-          answer: `Based on official BIS catalogues, requirements for "${q}" depend on the notified Quality Control Order. Please search by specific IS Number or HSN code for verified testing parameters.`,
-          citations: [{ kind: 'standard', ref: 'BIS General Standards Registry', status: 'ACTIVE' }],
-          highlight_nodes: [],
-          abstained: false,
-          passport_product: q
-        };
+        // Parse SSE events from buffer
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        let eventType = 'message';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+            continue;
+          }
+
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6);
+            try {
+              const parsed = JSON.parse(dataStr);
+
+              if (eventType === 'meta') {
+                // Final metadata — update the bot message with citations, intent, etc.
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === botMsgId
+                      ? {
+                          ...m,
+                          citations: parsed.citations || [],
+                          abstained: parsed.abstained || false,
+                          intent: parsed.intent || '',
+                          highlight_nodes: parsed.highlight_nodes || [],
+                          passport_url: parsed.passport_url || '',
+                          isStreaming: false
+                        }
+                      : m
+                  )
+                );
+              } else if (eventType === 'done') {
+                // Stream complete — mark done
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === botMsgId ? { ...m, isStreaming: false } : m
+                  )
+                );
+              } else {
+                // Regular token chunk
+                if (parsed.t !== undefined) {
+                  accumulatedText += parsed.t;
+                  const newText = accumulatedText;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === botMsgId ? { ...m, text: newText } : m
+                    )
+                  );
+                }
+              }
+            } catch (parseErr) {
+              // Skip unparseable lines
+            }
+            eventType = 'message'; // Reset event type
+          }
+        }
       }
+    } catch (err) {
+      console.log('SSE failed, trying non-streaming fallback:', err);
 
-      const botMsg = {
-        id: Date.now() + 1,
-        sender: 'bot',
-        text: match.answer,
-        citations: match.citations,
-        abstained: match.abstained,
-        highlight_nodes: match.highlight_nodes,
-        passport_url: match.passport_product ? `/passport/${match.passport_product}` : '',
-        product: match.passport_product || q,
-        timestamp: 'Now'
-      };
+      // Fallback: try the regular non-streaming /chat endpoint
+      try {
+        const response = await fetch(apiUrl(`/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`), {
+          method: 'POST'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === botMsgId
+                ? {
+                    ...m,
+                    text: data.answer,
+                    citations: data.citations || [],
+                    abstained: data.abstained || false,
+                    intent: data.intent,
+                    highlight_nodes: data.highlight_nodes || [],
+                    passport_url: data.passport_url || '',
+                    product: q,
+                    isStreaming: false
+                  }
+                : m
+            )
+          );
+        } else {
+          throw new Error('Non-streaming fallback failed');
+        }
+      } catch (fallbackErr) {
+        console.log('All API calls failed, using client-side fallback:', fallbackErr);
+        // Client-side fallback for demo reliability
+        const qLower = q.toLowerCase();
+        let match = null;
 
-      setMessages((prev) => [...prev, botMsg]);
+        if (qLower.includes('led') || qLower.includes('एलईडी') || qLower.includes('bulb')) {
+          match = FALLBACK_ANSWERS['led'];
+        } else if (qLower.includes('toy') || qLower.includes('खिलौने') || qLower.includes('plastic')) {
+          match = FALLBACK_ANSWERS['toy'];
+        } else if (
+          qLower.includes('gold') ||
+          qLower.includes('ring') ||
+          qLower.includes('हॉलमार्क') ||
+          qLower.includes('huid') ||
+          qLower.includes('jewellery')
+        ) {
+          match = FALLBACK_ANSWERS['gold'];
+        } else if (qLower.includes('swallow') || qLower.includes('airspeed') || qLower.includes('weather') || qLower.includes('joke')) {
+          match = FALLBACK_ANSWERS['swallow'];
+        } else {
+          match = {
+            answer: `Based on official BIS catalogues, requirements for "${q}" depend on the notified Quality Control Order. Please search by specific IS Number or HSN code for verified testing parameters.`,
+            citations: [{ kind: 'standard', ref: 'BIS General Standards Registry', status: 'ACTIVE' }],
+            highlight_nodes: [],
+            abstained: false,
+            passport_product: q
+          };
+        }
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === botMsgId
+              ? {
+                  ...m,
+                  text: match.answer,
+                  citations: match.citations,
+                  abstained: match.abstained,
+                  highlight_nodes: match.highlight_nodes,
+                  passport_url: match.passport_product ? `/passport/${match.passport_product}` : '',
+                  product: match.passport_product || q,
+                  isStreaming: false
+                }
+              : m
+          )
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -589,8 +697,13 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                     {/* Render Formatted Markdown */}
                     <FormattedMessage text={m.text} />
 
-                    {/* Citations (Official Gazette, Standards & Live Web) */}
-                    {m.citations && m.citations.length > 0 && (
+                    {/* Streaming cursor indicator */}
+                    {m.isStreaming && (
+                      <span className="streaming-cursor">▌</span>
+                    )}
+
+                    {/* Citations (Official Gazette, Standards & Live Web) — hidden for greetings */}
+                    {m.citations && m.citations.length > 0 && m.intent !== 'greeting' && !m.isStreaming && (
                       <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
                         <div
                           style={{
@@ -778,30 +891,27 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
             </div>
           ))}
 
-          {/* Loading Animation Indicator */}
-          {loading && (
+          {/* Beautiful Shimmer Loading Indicator */}
+          {loading && !messages.some(m => m.isStreaming && m.text.length > 0) && (
             <div className="chatgpt-row bot">
               <div className="chatgpt-bot-container">
-                <div className="chatgpt-bot-avatar" style={{ animation: 'pulse-recording 2s infinite' }}>
+                <div className="chatgpt-bot-avatar shimmer-avatar">
                   <Sparkles size={18} />
                 </div>
-                <div
-                  className="chatgpt-bot-content"
-                  style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748b' }}
-                >
-                  <div
-                    style={{
-                      width: '14px',
-                      height: '14px',
-                      border: '2px solid #ea580c',
-                      borderTopColor: 'transparent',
-                      borderRadius: '50%',
-                      animation: 'spin 1s linear infinite'
-                    }}
-                  />
-                  <span style={{ fontSize: '14px' }}>
-                    Searching 23,573 Indian Standards & Exa Live Web/Gazettes...
-                  </span>
+                <div className="chatgpt-bot-content shimmer-loading-content">
+                  <div className="shimmer-thinking-row">
+                    <div className="shimmer-dot-container">
+                      <span className="shimmer-dot" style={{ animationDelay: '0ms' }} />
+                      <span className="shimmer-dot" style={{ animationDelay: '200ms' }} />
+                      <span className="shimmer-dot" style={{ animationDelay: '400ms' }} />
+                    </div>
+                    <span className="shimmer-thinking-text">Analyzing your query...</span>
+                  </div>
+                  <div className="shimmer-skeleton-lines">
+                    <div className="shimmer-line" style={{ width: '92%', animationDelay: '0.1s' }} />
+                    <div className="shimmer-line" style={{ width: '78%', animationDelay: '0.2s' }} />
+                    <div className="shimmer-line" style={{ width: '65%', animationDelay: '0.3s' }} />
+                  </div>
                 </div>
               </div>
             </div>

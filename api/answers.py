@@ -403,25 +403,108 @@ def _call_gemini_llm(prompt: str, api_key: str) -> Optional[str]:
     return None
 
 
-def _call_groq_llm(prompt: str, api_key: str) -> Optional[str]:
-    """Calls Groq API (e.g. LLaMA-3.3-70b) for fast, detailed grounded generation."""
+def _stream_gemini_llm(prompt: str, api_key: str):
+    """Streams tokens from Google Gemini API."""
     try:
-        model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key={api_key}"
         payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1,
-            "max_tokens": 800
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 800}
         }
-        with httpx.Client(timeout=12.0) as client:
-            resp = client.post(url, headers=headers, json=payload)
-            if resp.status_code == 200:
-                return resp.json()["choices"][0]["message"]["content"].strip()
+        with httpx.Client(timeout=25.0) as client:
+            with client.stream("POST", url, json=payload) as resp:
+                if resp.status_code == 200:
+                    for line in resp.iter_lines():
+                        if line.startswith("data: "):
+                            try:
+                                data = json.loads(line[6:])
+                                text = data["candidates"][0]["content"]["parts"][0].get("text", "")
+                                if text:
+                                    yield text
+                            except Exception:
+                                continue
     except Exception as e:
-        logger.warning(f"Groq LLM Call failed: {e}")
+        logger.warning(f"Gemini streaming failed: {e}")
+
+
+def _call_groq_llm(prompt: str, api_key: str) -> Optional[str]:
+    """Calls Groq API with robust model fallback."""
+    models = [
+        os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b"),
+        "qwen/qwen3.8-27b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile"
+    ]
+    seen = set()
+    models = [m for m in models if m and not (m in seen or seen.add(m))]
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    for model in models:
+        try:
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 800
+            }
+            with httpx.Client(timeout=12.0) as client:
+                resp = client.post(url, headers=headers, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    msg = data["choices"][0]["message"]
+                    return (msg.get("content") or "").strip()
+        except Exception as e:
+            logger.warning(f"Groq LLM model {model} failed: {e}")
     return None
+
+
+def _stream_groq_llm(prompt: str, api_key: str):
+    """Streams tokens from Groq API."""
+    models = [
+        os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b"),
+        "qwen/qwen3.8-27b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile"
+    ]
+    seen = set()
+    models = [m for m in models if m and not (m in seen or seen.add(m))]
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    for model in models:
+        try:
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 800,
+                "stream": True
+            }
+            with httpx.Client(timeout=25.0) as client:
+                with client.stream("POST", url, headers=headers, json=payload) as resp:
+                    if resp.status_code != 200:
+                        continue
+                    has_yielded = False
+                    for line in resp.iter_lines():
+                        if line.startswith("data: ") and line.strip() != "data: [DONE]":
+                            try:
+                                chunk = json.loads(line[6:])
+                                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                content = delta.get("content") or ""
+                                if content:
+                                    has_yielded = True
+                                    yield content
+                            except Exception:
+                                continue
+                    if has_yielded:
+                        return
+        except Exception as e:
+            logger.warning(f"Groq streaming model {model} failed: {e}")
 
 
 def _call_azure_llm(prompt: str, api_key: str) -> Optional[str]:
@@ -459,13 +542,8 @@ def _call_ollama_llm(prompt: str, host: str = "http://localhost:11434") -> Optio
     return None
 
 
-def phrase(facts: Dict[str, Any], question: str) -> str:
-    """
-    Turns retrieved facts and live web search snippets into a comprehensive,
-    detailed, and strictly grounded answer via LLM.
-    Strictly forbids hallucinations while providing structured, complete context.
-    """
-    # Build web context block from Exa results if available
+def _build_prompt(facts: Dict[str, Any], question: str, lang: str = "en") -> str:
+    """Builds the grounded system prompt."""
     web_hits = facts.get("web_hits", [])
     web_context = ""
     if web_hits:
@@ -478,7 +556,14 @@ def phrase(facts: Dict[str, Any], question: str) -> str:
             lines.append(f"- Title: {title} ({date})\n  Snippet: {snippet}\n  URL: {url}")
         web_context = "\n\n### Official Live Web & Gazette Findings:\n" + "\n".join(lines)
 
-    p = (
+    lang_instr = ""
+    if lang == "hi":
+        lang_instr = (
+            "\n5. LANGUAGE REQUIREMENT: You MUST write your entire answer in fluent Hindi (Devanagari script / हिंदी भाषा). "
+            "Use authentic Hindi technical terms while keeping IS numbers (e.g. IS 16102) in English letters.\n"
+        )
+
+    return (
         f"You are Manak Mitra, the official AI Compliance Assistant for the Bureau of Indian Standards (BIS).\n\n"
         f"USER QUESTION: {question}\n\n"
         f"### VERIFIED DATABASE FACTS:\n{facts}\n"
@@ -494,34 +579,11 @@ def phrase(facts: Dict[str, Any], question: str) -> str:
         f"4. FORMATTING RULES:\n"
         f"   - Do NOT use markdown hash symbols (#, ##, ###) for headers.\n"
         f"   - Use bold titles (e.g., **1. Mandatory Status:**) and clean bullet points or numbered lists.\n"
-        f"   - Keep URLs clean and readable."
+        f"   - Keep URLs clean and readable.{lang_instr}"
     )
 
-    # 1. Google Gemini
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    if gemini_key:
-        res = _call_gemini_llm(p, gemini_key)
-        if res: return res
 
-    # 2. Groq
-    groq_key = os.environ.get("GROQ_API_KEY")
-    if groq_key:
-        res = _call_groq_llm(p, groq_key)
-        if res: return res
-
-    # 3. Azure OpenAI
-    azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
-    if azure_key:
-        res = _call_azure_llm(p, azure_key)
-        if res: return res
-
-    # 4. Ollama
-    ollama_host = os.environ.get("OLLAMA_HOST")
-    if ollama_host:
-        res = _call_ollama_llm(p, ollama_host)
-        if res: return res
-
-    # 5. Deterministic High-Quality Fallback
+def _deterministic_fallback(facts: Dict[str, Any]) -> str:
     citations = facts.get("citations", [])
     standards = [c["ref"] for c in citations if c.get("kind") == "standard"]
     qcos = [c for c in citations if c.get("kind") == "qco"]
@@ -554,6 +616,78 @@ def phrase(facts: Dict[str, Any], question: str) -> str:
         return f"Based on official BIS publications, the applicable Indian Standard is {std_list}. Please verify the latest amendments on standardsbis.in."
 
     return "Based on official BIS records, please verify with the official BIS portal or contact the helpline on 1800-11-4000."
+
+
+def phrase(facts: Dict[str, Any], question: str, lang: str = "en") -> str:
+    """
+    Turns retrieved facts and live web search snippets into a comprehensive,
+    detailed, and strictly grounded answer via LLM.
+    Strictly forbids hallucinations while providing structured, complete context.
+    """
+    p = _build_prompt(facts, question, lang=lang)
+
+    # 1. Google Gemini
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        res = _call_gemini_llm(p, gemini_key)
+        if res: return res
+
+    # 2. Groq
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        res = _call_groq_llm(p, groq_key)
+        if res: return res
+
+    # 3. Azure OpenAI
+    azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
+    if azure_key:
+        res = _call_azure_llm(p, azure_key)
+        if res: return res
+
+    # 4. Ollama
+    ollama_host = os.environ.get("OLLAMA_HOST")
+    if ollama_host:
+        res = _call_ollama_llm(p, ollama_host)
+        if res: return res
+
+    # 5. Deterministic High-Quality Fallback
+    return _deterministic_fallback(facts)
+
+
+def phrase_stream(facts: Dict[str, Any], question: str, lang: str = "en"):
+    """
+    Yields chunks of text in real-time for streaming clients.
+    """
+    import time
+    p = _build_prompt(facts, question, lang=lang)
+
+    # 1. Groq (Fastest & highly reliable)
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        has_tokens = False
+        for chunk in _stream_groq_llm(p, groq_key):
+            has_tokens = True
+            yield chunk
+        if has_tokens:
+            return
+
+    # 2. Google Gemini
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        has_tokens = False
+        for chunk in _stream_gemini_llm(p, gemini_key):
+            has_tokens = True
+            yield chunk
+        if has_tokens:
+            return
+
+    # Fallback to phrase() and stream words
+    fallback_text = phrase(facts, question, lang=lang)
+    words = fallback_text.split(" ")
+    for i, w in enumerate(words):
+        chunk = w if i == len(words) - 1 else w + " "
+        yield chunk
+        time.sleep(0.015)
 
 
 if __name__ == "__main__":
