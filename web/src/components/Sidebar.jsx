@@ -6,6 +6,7 @@ import {
   FileText,
   ShieldCheck,
   Layers,
+  ClipboardCheck,
   FlaskConical,
   BarChart3,
   PhoneCall,
@@ -94,6 +95,13 @@ export default function Sidebar({
     {
       groupTitle: 'COMPLIANCE & AUDIT',
       items: [
+        {
+          id: 'journey',
+          label: 'Compliance Journey',
+          hindi: 'अनुपालन यात्रा',
+          icon: ClipboardCheck,
+          badge: 'Start here'
+        },
         {
           id: 'passport',
           label: 'Compliance Passport',

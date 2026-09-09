@@ -8,6 +8,7 @@ import MarkVerifier from './components/MarkVerifier/MarkVerifier';
 import SchemeTimeline from './components/Schemes/SchemeTimeline';
 import LabLocator from './components/LabLocator/LabLocator';
 import MinistryDashboard from './components/Dashboard/MinistryDashboard';
+import ComplianceJourney from './components/ComplianceJourney';
 import Footer from './components/Footer';
 
 import { ChevronsRight, Sparkles } from 'lucide-react';
@@ -188,6 +189,14 @@ export default function App() {
           <StandardsGraph
             focusedStandard={focusedStandard}
             onSelectStandard={(std) => setFocusedStandard(std)}
+          />
+        )}
+
+        {/* ── COMPLIANCE JOURNEY ── */}
+        {activeTab === 'journey' && (
+          <ComplianceJourney
+            onOpenPassport={() => handleNavigate('passport')}
+            onOpenLabs={() => handleNavigate('labs')}
           />
         )}
 
