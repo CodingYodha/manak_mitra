@@ -12,6 +12,8 @@ import {
   X,
   ExternalLink,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   PanelLeftClose,
   PanelLeftOpen,
   Sparkles
@@ -22,23 +24,77 @@ export default function Sidebar({
   setActiveTab,
   onOpenPassport,
   isCollapsed = false,
-  onToggleCollapse
+  onToggleCollapse,
+  isSlidHidden = false,
+  onToggleSlide
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [touchStartX, setTouchStartX] = useState(null);
 
-  // Keyboard shortcut: Ctrl+B or Cmd+B to toggle sidebar collapse
+  // Keyboard shortcuts:
+  // Ctrl+B / Cmd+B -> Toggle collapse to icon-rail
+  // Ctrl+\ / Cmd+\ -> Slide completely off-canvas / in
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        if (onToggleCollapse) {
-          onToggleCollapse();
-        }
+        if (onToggleCollapse) onToggleCollapse();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === '\\' || e.key === '|')) {
+        e.preventDefault();
+        if (onToggleSlide) onToggleSlide();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onToggleCollapse]);
+  }, [onToggleCollapse, onToggleSlide]);
+
+  // Touch edge swipe gesture: Swipe right from screen edge (<35px) slides sidebar in
+  useEffect(() => {
+    let edgeStartX = null;
+    const onEdgeTouchStart = (e) => {
+      if (e.touches[0].clientX < 35) {
+        edgeStartX = e.touches[0].clientX;
+      }
+    };
+    const onEdgeTouchEnd = (e) => {
+      if (edgeStartX !== null) {
+        const diff = e.changedTouches[0].clientX - edgeStartX;
+        if (diff > 45) {
+          if (isSlidHidden && onToggleSlide) {
+            onToggleSlide();
+          } else {
+            setMobileOpen(true);
+          }
+        }
+        edgeStartX = null;
+      }
+    };
+    window.addEventListener('touchstart', onEdgeTouchStart, { passive: true });
+    window.addEventListener('touchend', onEdgeTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', onEdgeTouchStart);
+      window.removeEventListener('touchend', onEdgeTouchEnd);
+    };
+  }, [isSlidHidden, onToggleSlide]);
+
+  // Handle touch swipe on sidebar: swipe left to slide closed
+  const handleTouchStart = (e) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchStartX !== null) {
+      const diff = e.changedTouches[0].clientX - touchStartX;
+      if (diff < -50) {
+        if (mobileOpen) {
+          setMobileOpen(false);
+        } else if (onToggleSlide && !isSlidHidden) {
+          onToggleSlide();
+        }
+      }
+      setTouchStartX(null);
+    }
+  };
 
   const navGroups = [
     {
@@ -163,8 +219,12 @@ export default function Sidebar({
         />
       )}
 
-      {/* 3. PERSISTENT FIXED SIDEBAR (Collapsible on Desktop) */}
-      <aside className={`airtable-sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
+      {/* 3. PERSISTENT FIXED SIDEBAR (Slidable off-screen and Collapsible to icon-rail) */}
+      <aside
+        className={`airtable-sidebar ${mobileOpen ? 'mobile-open' : ''} ${isSlidHidden ? 'slid-hidden' : ''}`}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {/* Brand Header */}
         <div className={`sidebar-brand-header ${isCollapsed ? 'collapsed-header' : ''}`}>
           {!isCollapsed ? (
@@ -189,15 +249,25 @@ export default function Sidebar({
                 </div>
               </a>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {/* Desktop Collapse Toggle Button */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                {/* Desktop Collapse Toggle Button (shrink to 68px rail) */}
                 <button
                   className="sidebar-toggle-btn"
                   onClick={onToggleCollapse}
-                  title="Collapse sidebar (Ctrl+B)"
+                  title="Collapse sidebar to icon-rail (Ctrl+B)"
                   aria-label="Collapse sidebar"
                 >
                   <PanelLeftClose size={17} />
+                </button>
+
+                {/* Desktop Slide-Off Button (slide completely off-canvas) */}
+                <button
+                  className="sidebar-toggle-btn"
+                  onClick={onToggleSlide}
+                  title="Slide sidebar off-canvas (Ctrl+\)"
+                  aria-label="Slide off-canvas"
+                >
+                  <ChevronsLeft size={17} />
                 </button>
 
                 {/* Close button for mobile drawer */}
@@ -221,15 +291,27 @@ export default function Sidebar({
                 M
               </div>
 
-              {/* Desktop Expand Toggle Button */}
-              <button
-                className="sidebar-toggle-btn"
-                onClick={onToggleCollapse}
-                title="Expand sidebar (Ctrl+B)"
-                aria-label="Expand sidebar"
-              >
-                <PanelLeftOpen size={17} />
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center' }}>
+                {/* Desktop Expand Toggle Button */}
+                <button
+                  className="sidebar-toggle-btn"
+                  onClick={onToggleCollapse}
+                  title="Expand sidebar (Ctrl+B)"
+                  aria-label="Expand sidebar"
+                >
+                  <PanelLeftOpen size={17} />
+                </button>
+
+                {/* Slide completely off-canvas */}
+                <button
+                  className="sidebar-toggle-btn"
+                  onClick={onToggleSlide}
+                  title="Slide sidebar off-canvas (Ctrl+\)"
+                  aria-label="Slide off-canvas"
+                >
+                  <ChevronsLeft size={16} />
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -250,7 +332,6 @@ export default function Sidebar({
                       key={item.id}
                       className={`sidebar-item ${isActive ? 'active' : ''} ${isCollapsed ? 'collapsed-item' : ''}`}
                       onClick={() => handleSelectTab(item.id)}
-                      title={isCollapsed ? undefined : undefined}
                     >
                       <div className="sidebar-item-content">
                         <Icon size={17} className="sidebar-item-icon" />

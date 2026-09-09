@@ -19,7 +19,8 @@ import {
   ExternalLink,
   ArrowRight,
   Sparkles,
-  PhoneCall
+  PhoneCall,
+  PanelLeftOpen
 } from 'lucide-react';
 
 export default function App() {
@@ -33,11 +34,29 @@ export default function App() {
     }
   });
 
+  const [isSidebarSlidHidden, setIsSidebarSlidHidden] = useState(() => {
+    try {
+      return localStorage.getItem('manak_sidebar_hidden') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   const handleToggleSidebar = () => {
     setIsSidebarCollapsed((prev) => {
       const next = !prev;
       try {
         localStorage.setItem('manak_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const handleToggleSlide = () => {
+    setIsSidebarSlidHidden((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('manak_sidebar_hidden', String(next));
       } catch {}
       return next;
     });
@@ -57,15 +76,34 @@ export default function App() {
   };
 
   return (
-    <div className={`airtable-site app-layout-with-sidebar ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      {/* 1. PERSISTENT FIXED SIDEBAR (Collapsible, responsive, zero-auth) */}
+    <div
+      className={`airtable-site app-layout-with-sidebar ${
+        isSidebarCollapsed ? 'sidebar-collapsed' : ''
+      } ${isSidebarSlidHidden ? 'sidebar-slid-hidden' : ''}`}
+    >
+      {/* 1. PERSISTENT FIXED SIDEBAR (Collapsible, Slidable, Responsive) */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenPassport={handleOpenPassport}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
+        isSlidHidden={isSidebarSlidHidden}
+        onToggleSlide={handleToggleSlide}
       />
+
+      {/* Floating Edge Slide-In Pill when sidebar is slid off-canvas */}
+      {isSidebarSlidHidden && (
+        <button
+          className="sidebar-edge-slide-tab"
+          onClick={handleToggleSlide}
+          title="Slide open sidebar (Ctrl+\)"
+          aria-label="Slide open sidebar"
+        >
+          <PanelLeftOpen size={16} />
+          <span>Menu</span>
+        </button>
+      )}
 
       {/* 2. MAIN SCROLLABLE CONTENT AREA */}
       <div className="app-main-content">
