@@ -35,7 +35,10 @@ def _haversine(a: tuple, b: tuple) -> float:
 
 def _G():
     """Lazy graph accessor."""
-    from graph_store import get
+    try:
+        from api.graph_store import get
+    except ImportError:
+        from graph_store import get
     return get()
 
 
@@ -328,23 +331,34 @@ def standards_clustered(sector_code: str, k: int = 20) -> list[dict]:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # FEATURE 20 — Subgraph JSON for force-graph visualisation
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def subgraph_json(center_node: Optional[str] = None, hops: int = 2) -> dict:
+def subgraph_json(center_node: Optional[str] = None, hops: int = 2, full: bool = False, connected_only: bool = True) -> dict:
     G = _G()
     try:
         import networkx as nx
         if center_node and center_node in G:
             sub = nx.ego_graph(G, center_node, radius=hops, undirected=True)
+        elif full and not connected_only:
+            # Full 26,835 nodes
+            sub = G
         else:
-            # Return a manageable sample: all non-standard nodes + top 200 standard nodes
-            sample_nodes = [n for n, d in G.nodes(data=True) if d.get("type") != "standard"]
-            sample_nodes += [n for n, d in G.nodes(data=True) if d.get("type") == "standard"][:200]
-            sub = G.subgraph(sample_nodes)
+            # All 4,470 connected nodes spanning all 8,611 relationships
+            connected = [n for n in G.nodes() if G.degree(n) > 0]
+            sub = G.subgraph(connected)
 
         nodes = [{"id": n, **{k: v for k, v in d.items() if isinstance(v, (str, int, float, bool))}}
                  for n, d in sub.nodes(data=True)]
         links = [{"source": u, "target": v, "rel": d.get("rel", "")}
                  for u, v, d in sub.edges(data=True)]
-        return {"nodes": nodes, "links": links}
+        return {
+            "nodes": nodes,
+            "links": links,
+            "stats": {
+                "total_graph_nodes": G.number_of_nodes(),
+                "total_graph_edges": G.number_of_edges(),
+                "rendered_nodes": len(nodes),
+                "rendered_edges": len(links)
+            }
+        }
     except Exception as e:
         return {"nodes": [], "links": [], "error": str(e)}
 

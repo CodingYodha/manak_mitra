@@ -130,7 +130,10 @@ def labs(product: Optional[str] = None, city: Optional[str] = None,
     Owner: Rudra.
     """
     try:
-        import graph_queries as gq
+        try:
+            from api import graph_queries as gq
+        except ImportError:
+            import graph_queries as gq
         if product and city:
             return {"labs": gq.labs_near_for_product(product, city)}
         elif product:
@@ -177,7 +180,10 @@ def graph(highlight: Optional[list[str]] = None) -> dict:
     Owner: Rudra.
     """
     try:
-        import graph_queries as gq
+        try:
+            from api import graph_queries as gq
+        except ImportError:
+            import graph_queries as gq
         center = f"std:{highlight[0]}" if highlight else None
         data = gq.subgraph_json(center_node=center, hops=2)
         data["highlight_nodes"] = highlight or []

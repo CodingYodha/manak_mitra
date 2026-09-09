@@ -107,9 +107,16 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
 
 # ── Graph endpoints ───────────────────────────────────────────────────────────
 @app.get("/graph")
-def get_graph(highlight: str = ""):
-    nodes = [highlight] if highlight else None
-    return answers.graph(highlight=nodes)
+def get_graph(highlight: str = "", full: bool = False):
+    try:
+        from api import graph_queries
+        center = f"std:{highlight}" if highlight else None
+        data = graph_queries.subgraph_json(center_node=center, full=full, connected_only=not full)
+        data["highlight_nodes"] = [highlight] if highlight else []
+        return data
+    except Exception:
+        nodes = [highlight] if highlight else None
+        return answers.graph(highlight=nodes)
 
 @app.get("/graph/lab/{lab_id}")
 def lab_detail(lab_id: str):

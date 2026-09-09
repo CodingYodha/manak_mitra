@@ -61,6 +61,9 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(DEFAULT_GRAPH_DATA.nodes[0]);
   const [dimensions, setDimensions] = useState({ width: 700, height: 500 });
+  const [isFullGraph, setIsFullGraph] = useState(false);
+  const [graphStats, setGraphStats] = useState({ total_graph_nodes: 26835, total_graph_edges: 8611, rendered_nodes: 4470, rendered_edges: 8611 });
+  const [loading, setLoading] = useState(false);
   const containerRef = useRef(null);
   const fgRef = useRef(null);
 
@@ -84,9 +87,13 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
 
   // Fetch graph from backend API
   useEffect(() => {
-    const url = focusedStandard
-      ? `http://localhost:8000/graph?highlight=${encodeURIComponent(focusedStandard)}`
-      : 'http://localhost:8000/graph';
+    setLoading(true);
+    let url = 'http://localhost:8000/graph';
+    if (focusedStandard) {
+      url += `?highlight=${encodeURIComponent(focusedStandard)}`;
+    } else if (isFullGraph) {
+      url += `?full=true`;
+    }
 
     fetch(url)
       .then((res) => res.json())
@@ -109,6 +116,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             rel: l.rel || 'links_to'
           }));
           setGraphData({ nodes, links });
+          if (data.stats) setGraphStats(data.stats);
 
           if (focusedStandard) {
             const match = nodes.find((n) => n.id === focusedStandard || n.id === `std:${focusedStandard}`);
@@ -116,8 +124,9 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
           }
         }
       })
-      .catch(() => console.log('Using default knowledge graph preview'));
-  }, [focusedStandard]);
+      .catch(() => console.log('Using default knowledge graph preview'))
+      .finally(() => setLoading(false));
+  }, [focusedStandard, isFullGraph]);
 
   // Filter nodes and links based on selected ICS sector & search query
   const filteredData = useMemo(() => {
@@ -187,18 +196,34 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             />
           </div>
 
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            style={{ height: '32px', padding: '0 10px', borderRadius: '6px', border: '1px solid #dddddd', background: '#f8fafc', fontSize: '12.5px', color: '#181d26' }}
+          <button
+            onClick={() => setIsFullGraph(!isFullGraph)}
+            style={{
+              height: '32px',
+              padding: '0 12px',
+              borderRadius: '6px',
+              border: '1px solid #cbd5e1',
+              background: isFullGraph ? '#1e293b' : '#ffffff',
+              color: isFullGraph ? '#ffffff' : '#0f172a',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
           >
-            {ICS_CATEGORIES.map((cat) => (
-              <option key={cat.code} value={cat.code}>
-                {cat.label}
-              </option>
-            ))}
-          </select>
+            {isFullGraph ? 'Showing All 26.8k Nodes' : 'Show Connected 4.4k Cluster'}
+          </button>
         </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '11.5px', color: '#64748b' }}>
+        <span style={{ padding: '2px 8px', background: '#eff6ff', color: '#1e40af', borderRadius: '4px', fontWeight: 600 }}>
+          {graphStats.rendered_nodes?.toLocaleString()} Active Nodes
+        </span>
+        <span>•</span>
+        <span style={{ padding: '2px 8px', background: '#f0fdf4', color: '#166534', borderRadius: '4px', fontWeight: 600 }}>
+          {graphStats.rendered_edges?.toLocaleString()} Connected Relationships
+        </span>
+        {loading && <span style={{ color: '#2563eb', fontWeight: 500 }}>Refreshing graph...</span>}
       </div>
 
       {/* Main Visualizer & Info Panel Layout */}
