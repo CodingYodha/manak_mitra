@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Navbar from './components/Navbar';
+import Sidebar from './components/Sidebar';
 import Hero from './components/Hero';
 import ChatAssistant from './components/Chat/ChatAssistant';
 import StandardsGraph from './components/KnowledgeGraph/StandardsGraph';
@@ -40,16 +40,18 @@ export default function App() {
   };
 
   return (
-    <div className="airtable-site">
-      {/* 1. TOP NAVIGATION BAR (No Auth Required) */}
-      <Navbar
+    <div className="airtable-site app-layout-with-sidebar">
+      {/* 1. PERSISTENT FIXED SIDEBAR (Visible throughout scroll & responsive) */}
+      <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenPassport={handleOpenPassport}
       />
 
-      {/* 2. TABBED MAIN VIEWS OR FULL EDITORIAL LANDING */}
-      {activeTab === 'assistant' && (
+      {/* 2. MAIN SCROLLABLE CONTENT AREA */}
+      <div className="app-main-content">
+        {/* TABBED MAIN VIEWS OR FULL EDITORIAL LANDING */}
+        {activeTab === 'assistant' && (
         <>
           {/* Hero Section */}
           <Hero
@@ -344,6 +346,7 @@ export default function App() {
 
       {/* 3. EDITORIAL FOOTER */}
       <Footer onNavigate={(tab) => setActiveTab(tab)} />
+      </div>
     </div>
   );
 }
