@@ -147,6 +147,9 @@ def mandate(term: str) -> Dict[str, Any]:
     if not result.get("_top_score") and web["web_hits"]:
         result["_top_score"] = 0.8
 
+    return result
+
+
 def scheme(query_or_name: str) -> Dict[str, Any]:
     """
     Dynamic walk of Jay's schemes.yaml decision tree.
