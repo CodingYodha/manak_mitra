@@ -35,6 +35,7 @@ def init():
         ingest.init_schema(c)
 
         # Check if database has been populated
+        qco_count = c.execute("SELECT count(*) FROM qco").fetchone()[0]
         prod_count = c.execute("SELECT count(*) FROM qco_items").fetchone()[0]
         lab_count = c.execute("SELECT count(*) FROM labs").fetchone()[0]
 
