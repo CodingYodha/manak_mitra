@@ -26,14 +26,14 @@ import {
 export default function App() {
   const [activeTab, setActiveTab] = useState('assistant');
   const [focusedStandard, setFocusedStandard] = useState(null);
-  const [initialAssistantQuery, setInitialAssistantQuery] = useState(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Ensure sidebar always defaults to open upon page refresh
+  useEffect(() => {
     try {
-      return localStorage.getItem('manak_sidebar_open') !== 'false';
-    } catch {
-      return true;
-    }
-  });
+      localStorage.removeItem('manak_sidebar_open');
+    } catch {}
+  }, []);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
@@ -97,13 +97,7 @@ export default function App() {
   };
 
   const handleToggleSidebar = () => {
-    setIsSidebarOpen((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('manak_sidebar_open', String(next));
-      } catch {}
-      return next;
-    });
+    setIsSidebarOpen((prev) => !prev);
   };
 
   const handleSelectStandard = (isNumber) => {

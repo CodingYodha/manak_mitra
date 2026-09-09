@@ -6,6 +6,7 @@ contains every connected node and relationship, with deterministic coordinates
 for instant browser rendering.
 """
 import json
+import math
 import pathlib
 import pickle
 from typing import Optional
@@ -76,16 +77,44 @@ def build_positions(graph: nx.DiGraph) -> dict:
     return positions
 
 
+def position_full_catalogue(graph: nx.DiGraph, connected_positions: dict) -> dict:
+    """Position every catalogue record without browser-side simulation.
+
+    Connected entities retain the offline spring layout. Standards with no
+    sourced relationship are distributed across deterministic outer shells,
+    making the full catalogue navigable instead of collapsing at (0, 0, 0).
+    """
+    positions = dict(connected_positions)
+    isolates = sorted(node for node, degree in graph.degree() if degree == 0)
+    golden_angle = math.pi * (3 - math.sqrt(5))
+    shell_size = 7000
+
+    for index, node_id in enumerate(isolates):
+        within_shell = index % shell_size
+        shell_count = min(shell_size, len(isolates) - (index // shell_size) * shell_size)
+        radius = 1150 + (index // shell_size) * 220
+        y = 1 - 2 * ((within_shell + 0.5) / shell_count)
+        radial = math.sqrt(max(0, 1 - y * y))
+        angle = golden_angle * within_shell
+        positions[node_id] = (
+            radius * math.cos(angle) * radial,
+            radius * y,
+            radius * math.sin(angle) * radial,
+        )
+    return positions
+
+
 def main() -> None:
     with GRAPH_FILE.open("rb") as handle:
         graph = pickle.load(handle)
     if not isinstance(graph, nx.DiGraph):
         graph = nx.DiGraph(graph)
 
-    full = serialise_graph(graph)
     connected_nodes = [node for node, degree in graph.degree() if degree > 0]
     connected = graph.subgraph(connected_nodes).copy()
-    positioned = serialise_graph(connected, build_positions(connected))
+    connected_positions = build_positions(connected)
+    full = serialise_graph(graph, position_full_catalogue(graph, connected_positions))
+    positioned = serialise_graph(connected, connected_positions)
 
     FULL_FILE.write_text(json.dumps(full, ensure_ascii=False, separators=(",", ":")))
     THREE_D_FILE.write_text(json.dumps(positioned, ensure_ascii=False, separators=(",", ":")))
