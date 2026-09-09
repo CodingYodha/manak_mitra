@@ -254,25 +254,31 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
       {/* Messages Scroll Area */}
       <div className="chat-box-messages">
         {messages.map((m) => (
-          <div key={m.id} className={`chat-msg-row ${m.sender}`}>
-            <div className="chat-bubble">
-              <div>{m.text}</div>
+            <div key={m.id} className={`chat-msg-row ${m.sender}`}>
+              <div className="chat-bubble">
+              {m.sender === 'bot' && !m.abstained && (
+                <div className="result-eyebrow">
+                  <ShieldCheck size={13} /> Verified response
+                  {m.intent && <span>{m.intent.replace(/_/g, ' ')}</span>}
+                </div>
+              )}
+              <div className="result-answer">{m.text}</div>
 
               {/* Citations (Official Gazette & IS Standards) */}
               {m.citations && m.citations.length > 0 && (
-                <div className="chips-container">
-                  {m.citations.map((c, i) => (
-                    <span
-                      key={i}
-                      className={`chip-citation ${c.kind}`}
-                      title={c.ref}
-                    >
-                      {c.kind === 'standard' ? '🏷️ ' : '📜 '}
-                      {c.ref}
-                      {c.status ? ` (${c.status})` : ''}
-                    </span>
-                  ))}
-                </div>
+                <details className="result-sources">
+                  <summary>{m.citations.length} supporting source{m.citations.length === 1 ? '' : 's'}</summary>
+                  <div className="result-source-list">
+                    {m.citations.map((c, i) => {
+                      const url = c.url || c.purchase_url;
+                      return <div className="result-source" key={i}>
+                        <span className={`source-kind ${c.kind}`}>{c.kind === 'standard' ? 'IS' : 'QCO'}</span>
+                        <span>{c.ref}{c.status ? ` · ${c.status}` : ''}</span>
+                        {url && <a href={url} target="_blank" rel="noreferrer" aria-label={`Open source ${c.ref}`}><ExternalLink size={13} /></a>}
+                      </div>;
+                    })}
+                  </div>
+                </details>
               )}
 
               {/* Refusal / Helpline Alert Card */}
