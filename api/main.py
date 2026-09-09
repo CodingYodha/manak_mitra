@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from api import answers, guard, store, marks
+from api import answers, guard, store, marks, lang as lang_utils
 from typing import Optional
 import datetime
 import re
@@ -65,8 +65,14 @@ def on_startup():
 
 @app.post("/chat")
 def chat(q: str, lang: str = "en", channel: str = "web"):
-    intent = route(q)
-    city = extract_city(q)
+    is_hi = lang_utils.is_hindi(q) or lang == "hi"
+    user_lang = "hi" if is_hi else lang
+
+    # Translate Hindi input query to English for intent routing & standards vector search
+    query_en = lang_utils.translate(q, src="hi", tgt="en") if is_hi else q
+
+    intent = route(query_en)
+    city = extract_city(query_en) or extract_city(q)
 
     # ── 1. Consumer / Mark Verification ──────────────────────────────────────
     if intent == "consumer":
@@ -81,9 +87,11 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
             "citations": citations
         }
         answer_text = mark_res.get("reason", "Mark verification complete.")
-        refs = [c["ref"] for c in citations]
+        if is_hi:
+            answer_text = lang_utils.translate(answer_text, src="en", tgt="hi")
+        refs = list(dict.fromkeys([c["ref"] for c in citations if "ref" in c]))
 
-        store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=lang,
+        store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
                   intent=intent, matched_is=refs[0] if refs else None,
                   top_score=1.0, abstained=0)
 
@@ -99,28 +107,35 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
 
     # ── 2. Scheme & Process Guidance ─────────────────────────────────────────
     elif intent == "scheme":
-        facts = answers.scheme(q)
+        facts = answers.scheme(query_en)
 
     # ── 3. Laboratory Lookup ────────────────────────────────────────────────
     elif intent == "labs":
         # Check if query references a specific standard or product
-        rec = answers.recommend(q)
+        rec = answers.recommend(query_en)
         top_is = rec["hits"][0]["is_number"] if rec.get("hits") else None
-        facts = answers.labs(city=city, category=q, is_number=top_is)
+        facts = answers.labs(city=city, category=query_en, is_number=top_is)
 
     # ── 4. Compliance Passport ──────────────────────────────────────────────
     elif intent == "passport":
-        facts = answers.passport(q)
+        facts = answers.passport(query_en)
 
     # ── 5. Mandate & Standards Search ───────────────────────────────────────
     elif intent == "mandate":
-        facts = answers.mandate(q)
+        facts = answers.mandate(query_en)
         if not facts.get("mandatory"):
-            rec = answers.recommend(q)
+            rec = answers.recommend(query_en)
             hits = rec.get("hits", [])
             if hits:
-                top_hit = hits[0]
-                qco_rows = store.mandate_for(top_hit["is_number"])
+                qco_rows = []
+                matched_hit = hits[0]
+                for h in hits[:5]:
+                    rows = store.mandate_for(h["is_number"])
+                    if rows:
+                        qco_rows = rows
+                        matched_hit = h
+                        break
+
                 if qco_rows:
                     r = qco_rows[0]
                     facts = {
@@ -129,14 +144,14 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
                         "is_number": r["is_number"],
                         "effective_on": r.get("effective_on"),
                         "qco_title": r.get("qco_title"),
-                        "hits": hits,
+                        "hits": [matched_hit] + [h for h in hits if h["is_number"] != matched_hit["is_number"]],
                         "citations": [{
                             "kind": "qco",
                             "ref": r.get("is_number") or r.get("qco_title"),
                             "title": r.get("qco_title"),
                             "url": r.get("gazette_url"),
                             "retrieved_on": r.get("retrieved_on", "2026-09-09")
-                        }] + rec.get("citations", [])
+                        }] + [c for c in rec.get("citations", []) if c.get("ref") == r.get("is_number")] + [c for c in rec.get("citations", []) if c.get("ref") != r.get("is_number")]
                     }
                 else:
                     facts = rec
@@ -144,7 +159,7 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
                 facts = rec
 
     else:
-        facts = answers.recommend(q)
+        facts = answers.recommend(query_en)
 
     # ── Abstention & Confidence Check ───────────────────────────────────────
     hits = facts.get("hits", [])
@@ -156,23 +171,28 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
         top = facts.get("_top_score", 0.0)
 
     if guard.should_abstain(top):
-        store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=lang,
+        refusal_answer = lang_utils.translate(guard.REFUSAL, src="en", tgt="hi") if is_hi else guard.REFUSAL
+        store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
                   intent=intent, matched_is=None, top_score=top, abstained=1)
         return {
-            "answer": guard.REFUSAL,
+            "answer": refusal_answer,
             "intent": intent,
             "abstained": True,
             "citations": []
         }
 
     citations = facts.get("citations", [])
-    refs = [c["ref"] for c in citations if "ref" in c]
+    refs = list(dict.fromkeys([c["ref"] for c in citations if "ref" in c]))
 
     # Grounded Phrasing + Hallucination Enforcer
-    raw_answer = answers.phrase(facts, q)
+    raw_answer = answers.phrase(facts, query_en)
     text = guard.enforce(raw_answer, refs)
 
-    store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=lang,
+    # Translate response back to Hindi if input was vernacular
+    if is_hi:
+        text = lang_utils.translate(text, src="en", tgt="hi")
+
+    store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
               intent=intent, matched_is=refs[0] if refs else None,
               top_score=top, abstained=0)
 
@@ -182,7 +202,7 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
         "abstained": False,
         "citations": citations,
         "highlight_nodes": refs,
-        "passport_url": f"/passport/{q}" if intent in ["mandate", "recommend", "passport"] else ""
+        "passport_url": f"/passport/{query_en}" if intent in ["mandate", "recommend", "passport"] else ""
     }
 
 
@@ -267,12 +287,13 @@ def product_path(product: str):
 
 # ── Lab endpoints ─────────────────────────────────────────────────────────────
 @app.get("/labs/near")
-def get_labs_near(product: str = "", city: str = "", category: str = "", is_number: str = ""):
+def get_labs_near(product: str = "", city: str = "", category: str = "", is_number: str = "", limit: int = 50):
     return answers.labs(
         product=product or None,
         city=city or None,
         category=category or None,
-        is_number=is_number or None
+        is_number=is_number or None,
+        limit=limit
     )
 
 

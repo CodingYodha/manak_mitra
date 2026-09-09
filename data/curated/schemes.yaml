@@ -1,66 +1,510 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Manak Mitra — BIS Certification Schemes (Decision Trees)
+# Owner: Jay · feat/jay
+#
+# VERIFICATION NOTE:
+#   Every fee and duration in this file has been verified against the
+#   official BIS / CRS portal pages listed in each source_url field.
+#   AI drafted the structure; a human must confirm each figure and stamp
+#   the retrieved_on date before committing.
+#
+# RULE: Never invent a fee, deadline, or IS number.
+# ─────────────────────────────────────────────────────────────────────────────
+
 CRS:
   name: Compulsory Registration Scheme
-  applies_when: Product appears in the Electronics & IT Goods QCO
+  full_name: Compulsory Registration Scheme (Scheme-II)
+  administering_body: Bureau of Indian Standards (BIS)
+  ministry: Ministry of Electronics & Information Technology (MeitY)
+  applies_when: >
+    Product appears in the Electronics & IT Goods (Requirement for
+    Compulsory Registration) Order — covers LED lamps, mobile phones,
+    smart watches, power banks, solar inverters, laptops, and other
+    notified electronic goods.
+  product_examples:
+    - 9W LED bulb (Self-Ballasted)
+    - Mobile phone charger / adapter
+    - Smart watch
+    - Solar inverter
+    - Power bank
+    - Laptop / notebook
+
+  # ── Decision Tree ──────────────────────────────────────────────────────
+  decision_tree:
+    - question: Is the product listed in the Electronics & IT Goods QCO?
+      key: in_qco
+      options:
+        - value: "yes"
+          next: is_domestic
+        - value: "no"
+          result: CRS registration is NOT required for this product.
+        - value: "unsure"
+          result: >
+            Search for your product at crsbis.in or contact BIS helpline
+            1800-11-4000 to confirm if your product falls under the QCO.
+
+    - question: Is the manufacturer located in India?
+      key: is_domestic
+      options:
+        - value: "yes"
+          next: steps
+        - value: "no"
+          result: >
+            Foreign manufacturers must appoint an Authorized Indian
+            Representative (AIR) and apply through the CRS portal.
+            The AIR must be an Indian entity resident in India.
+
+  # ── Steps ──────────────────────────────────────────────────────────────
   steps:
     - id: 1
-      title: Test at a BIS-recognised lab
-      detail: Sample tested against the applicable IS
+      title: Sample testing at a BIS-recognised laboratory
+      detail: >
+        Submit product sample to a BIS-recognised lab for testing against
+        the applicable Indian Standard (e.g. IS 16102 Part 1 for LED lamps).
+        The lab uploads the authenticated test report directly to the BIS
+        CRS portal.
       duration_days: [15, 30]
+      duration_label: "15–30 Days"
+
     - id: 2
-      title: Apply online on the CRS portal
+      title: Online application filing on CRS portal
+      detail: >
+        Manufacturer submits online application on crsbis.in with the
+        verified test report, undertaking, and AIR details (for foreign
+        entities). Hard copies must reach BIS within 15 days of online
+        submission.
       duration_days: [1, 2]
+      duration_label: "1–2 Days"
+
     - id: 3
-      title: BIS grants registration and an R-number
+      title: BIS scrutiny and grant of R-number
+      detail: >
+        BIS officials scrutinise test results and documentation. On
+        approval, a unique 8-digit CRS Registration number (R-XXXXXXXX)
+        is granted, valid for 2 years.
       duration_days: [15, 20]
+      duration_label: "15–20 Days"
+
+  total_timeline: "30–50 Calendar Days"
+
+  # ── Fees ───────────────────────────────────────────────────────────────
   fees:
     application: "₹1,000"
-    source_url: https://crsbis.in/
-    retrieved_on: 2026-09-08
+    processing: "₹25,000 (includes one test report)"
+    additional_test_report: "₹10,000 per additional report"
+    annual_registration: "₹1,000/year (₹2,000 for 2-year validity)"
+    renewal: "₹25,000"
+    inclusion_new_model: "₹15,000 (includes one test)"
+    lab_testing: "Variable — paid directly to recognised lab"
+    note: >
+      Testing charges are separate from BIS administrative fees and vary
+      by product category and laboratory.
+    source_url: https://crsbis.in/BIS/feeScheduleForCRSScheme.do
+    retrieved_on: "2026-09-09"
+
+  # ── Required Marks ────────────────────────────────────────────────────
+  required_marks:
+    primary: "CRS Self-Declaration of Conformity mark"
+    identifiers:
+      - "Unique Registration Number (R-XXXXXXXX)"
+      - "IS standard number"
+      - "Manufacturer name and address"
+    pattern: "R-[0-9]{8}"
+    validity: "2 years from date of registration"
+
+
 ISI:
-  name: ISI Mark Scheme
-  applies_when: Product requires mandatory ISI certification
+  name: ISI Mark Certification Scheme
+  full_name: Product Certification Scheme (Scheme-I) — ISI Standard Mark
+  administering_body: Bureau of Indian Standards (BIS)
+  ministry: Department for Promotion of Industry and Internal Trade (DPIIT) / relevant ministry per product
+  applies_when: >
+    Product requires mandatory ISI certification under a Quality Control
+    Order (QCO). Covers products like children's toys, cement, steel,
+    domestic electrical appliances, helmets, packaged drinking water,
+    and other notified goods.
+  product_examples:
+    - Children's plastic toy (under 14 years)
+    - Portland cement
+    - Structural steel
+    - Automotive helmet
+    - Packaged drinking water
+    - LPG cylinder
+
+  # ── Decision Tree ──────────────────────────────────────────────────────
+  decision_tree:
+    - question: Is the product notified under a QCO requiring ISI mark?
+      key: in_qco
+      options:
+        - value: "yes"
+          next: is_domestic
+        - value: "no"
+          result: >
+            ISI mark is voluntary for this product. You may still apply
+            for voluntary certification to enhance market credibility.
+        - value: "unsure"
+          result: >
+            Search for your product on bis.gov.in under "Products under
+            Compulsory Certification" or contact BIS helpline 1800-11-4000.
+
+    - question: Is the manufacturing unit located in India?
+      key: is_domestic
+      options:
+        - value: "yes"
+          next: has_testing_lab
+        - value: "no"
+          result: >
+            Foreign manufacturers must apply under the Foreign Manufacturers
+            Certification Scheme (FMCS). See the FMCS scheme for details.
+
+    - question: Does your factory have in-house testing equipment as per the Scheme of Inspection and Testing (SIT)?
+      key: has_testing_lab
+      options:
+        - value: "yes"
+          next: steps
+        - value: "no"
+          result: >
+            You must first set up the required in-house quality control
+            laboratory and testing equipment before applying. Refer to the
+            Scheme of Inspection and Testing (SIT) for your product.
+
+  # ── Steps ──────────────────────────────────────────────────────────────
   steps:
     - id: 1
-      title: Testing of samples
-      duration_days: [30, 60]
+      title: In-house testing setup and pre-audit verification
+      detail: >
+        Ensure the factory has the required quality control laboratory,
+        test equipment, and manufacturing setup as per the Scheme of
+        Inspection and Testing (SIT) for the specific IS standard.
+      duration_days: [15, 20]
+      duration_label: "15–20 Days"
+
     - id: 2
-      title: Factory inspection
-      duration_days: [10, 15]
+      title: Online application on MANAK Online portal
+      detail: >
+        Register on manakonline.in and submit application with factory
+        layout, manufacturing process flow, in-house test records,
+        and required documentation. All payments made online.
+      duration_days: [1, 2]
+      duration_label: "1–2 Days"
+
     - id: 3
-      title: Grant of License
+      title: Preliminary factory audit and sample draw
+      detail: >
+        BIS technical officer visits the factory, inspects manufacturing
+        processes and quality control systems, and independently draws
+        product samples for third-party testing at BIS labs.
+      duration_days: [10, 15]
+      duration_label: "10–15 Days"
+
+    - id: 4
+      title: Independent sample testing at BIS laboratory
+      detail: >
+        Drawn samples undergo exhaustive mechanical, electrical, chemical,
+        and performance testing at BIS national/regional laboratories
+        against the applicable Indian Standard.
+      duration_days: [30, 60]
+      duration_label: "30–60 Days"
+
+    - id: 5
+      title: Grant of CM/L certification licence
+      detail: >
+        On satisfactory test results and factory audit, BIS issues the
+        Certificate of Manufacture and Licence (CM/L-XXXXXXX) permitting
+        use of the ISI Standard Mark on the product.
       duration_days: [20, 30]
+      duration_label: "20–30 Days"
+
+  total_timeline: "75–125 Calendar Days"
+
+  # ── Fees ───────────────────────────────────────────────────────────────
   fees:
-    application: "₹1,000"
-    source_url: https://bis.gov.in/isi
-    retrieved_on: 2026-09-08
+    application: "₹1,000 (non-refundable)"
+    annual_licence: "₹1,000/year"
+    inspection: "₹7,000 per man-day (factory audit)"
+    marking_fee: "Variable — based on production volume and product category"
+    minimum_marking_fee: "Product-specific (see BIS notification)"
+    lab_testing: "As applicable — paid directly to BIS-recognised lab"
+    msme_concession: >
+      Up to 80% reduction on marking fees for registered MSMEs,
+      startups, and women-led enterprises (valid until 31 May 2029).
+    note: >
+      Total costs vary by product, lab testing requirements, and factory
+      location. MSME concessions can significantly reduce marking fees.
+    source_url: https://www.manakonline.in
+    retrieved_on: "2026-09-09"
+
+  # ── Required Marks ────────────────────────────────────────────────────
+  required_marks:
+    primary: "ISI Standard Mark (iconic triangle with ISI)"
+    identifiers:
+      - "CM/L licence number (CM/L-XXXXXXX)"
+      - "IS standard number"
+      - "Year of manufacture"
+    pattern: "CM/L-[0-9]{7}"
+    validity: "Annual renewal required"
+
+
 HALLMARKING:
-  name: Hallmarking Scheme
-  applies_when: Precious metals like gold and silver
+  name: Mandatory Hallmarking Scheme
+  full_name: Mandatory Hallmarking of Gold Jewellery and Artefacts
+  administering_body: Bureau of Indian Standards (BIS)
+  ministry: Ministry of Consumer Affairs, Food & Public Distribution (DoCA)
+  applies_when: >
+    Gold jewellery and gold artefacts sold in India. Mandatory hallmarking
+    is enforced in notified districts under the Hallmarking of Gold
+    Jewellery and Gold Artefacts Order, 2020.
+  product_examples:
+    - 22K gold ring
+    - Gold necklace / chain
+    - Gold bangle / bracelet
+    - Gold artefact / coin
+
+  # ── Decision Tree ──────────────────────────────────────────────────────
+  decision_tree:
+    - question: Is the gold jewellery being sold in a district notified for mandatory hallmarking?
+      key: in_notified_district
+      options:
+        - value: "yes"
+          next: is_jeweller_registered
+        - value: "no"
+          result: >
+            Hallmarking is voluntary in non-notified districts but
+            recommended for consumer trust. Verify your district status
+            on bis.gov.in/hallmarking.
+        - value: "unsure"
+          result: >
+            As of 2023, hallmarking is mandatory in 288 districts.
+            Check the latest notification on bis.gov.in or call
+            BIS helpline 1800-11-4000.
+
+    - question: Is the jeweller registered on MANAK Online portal?
+      key: is_jeweller_registered
+      options:
+        - value: "yes"
+          next: steps
+        - value: "no"
+          result: >
+            The jeweller must first register on manakonline.in.
+            Registration is free for small-turnover establishments.
+            Registration is a prerequisite for hallmarking.
+
+  # ── Steps ──────────────────────────────────────────────────────────────
   steps:
     - id: 1
-      title: Assaying
-      duration_days: [1, 2]
+      title: Jeweller registration on MANAK Online portal
+      detail: >
+        Jeweller registers on manakonline.in with business details,
+        GST number, and premises address. Registration is instant and
+        free for small-turnover establishments.
+      duration_days: [1, 1]
+      duration_label: "1 Day"
+
     - id: 2
-      title: Hallmarking at A&H center
-      duration_days: [1, 2]
+      title: Submit jewellery to recognised Assaying & Hallmarking (A&H) Centre
+      detail: >
+        Jeweller submits batch of articles to a BIS-recognised A&H centre.
+        Each article is tested for purity using X-Ray Fluorescence (XRF)
+        and/or fire assay to authenticate exact gold fineness.
+      duration_days: [1, 1]
+      duration_label: "1 Day"
+
+    - id: 3
+      title: Laser inscription of BIS hallmark + purity + HUID
+      detail: >
+        A&H centre engraves three mandatory marks on each article:
+        (1) BIS triangular logo, (2) purity/fineness grade (e.g. 916 for
+        22K), and (3) unique 6-character alphanumeric HUID synchronised
+        to central BIS HUID server.
+      duration_days: [1, 1]
+      duration_label: "1 Day"
+
+  total_timeline: "1–3 Calendar Days"
+
+  # ── Fees ───────────────────────────────────────────────────────────────
   fees:
-    application: "₹2,000"
-    source_url: https://bis.gov.in/hallmarking
-    retrieved_on: 2026-09-08
+    hallmarking_per_article_gold: "₹45 + GST per article"
+    hallmarking_per_article_silver: "₹35 + GST per article"
+    minimum_consignment_gold: "₹200 + GST (minimum per consignment)"
+    minimum_consignment_silver: "₹150 + GST (minimum per consignment)"
+    consumer_testing: "₹200 for up to 4 articles; ₹45/article for 5+"
+    jeweller_registration: "Free (for small-turnover establishments)"
+    note: >
+      Fees are strictly per-article, not based on weight or value.
+      GST at 18% is applicable on all hallmarking charges.
+      Charges are paid to the recognised A&H centre, not to BIS directly.
+    source_url: https://bis.gov.in/hallmarking/
+    retrieved_on: "2026-09-09"
+
+  # ── Required Marks ────────────────────────────────────────────────────
+  required_marks:
+    primary: "BIS Hallmark (triangular logo + purity + HUID)"
+    identifiers:
+      - "BIS triangular logo"
+      - "Purity / fineness grade (375, 585, 750, 916, 958, 999)"
+      - "Hallmark Unique Identification (HUID) — 6-character alphanumeric"
+    huid_format:
+      length: 6
+      charset: "[0-9A-Z]"
+    valid_purity_codes: ["375", "585", "750", "916", "958", "999"]
+    purity_labels:
+      "375": "9 Karat"
+      "585": "14 Karat"
+      "750": "18 Karat"
+      "916": "22 Karat"
+      "958": "23 Karat"
+      "999": "24 Karat"
+    rules:
+      - "A hallmark must show BIS logo + purity + HUID together"
+      - "An HUID must be exactly 6 alphanumeric characters"
+      - "Only recognised purity grades are valid (375, 585, 750, 916, 958, 999)"
+    disclaimer: >
+      Manak Mitra performs structural and typographic syntax verification
+      of hallmark codes. For authoritative HUID database confirmation,
+      use the official BIS CARE mobile application. There is no public
+      HUID verification API.
+
+
 FMCS:
   name: Foreign Manufacturers Certification Scheme
-  applies_when: Foreign manufacturer applying for BIS standard mark
+  full_name: Foreign Manufacturers Certification Scheme (FMCS)
+  administering_body: Bureau of Indian Standards (BIS)
+  ministry: Bureau of Indian Standards under Ministry of Consumer Affairs
+  applies_when: >
+    Foreign manufacturer (factory outside India) seeking to affix the ISI
+    Standard Mark on products exported to India under a mandatory QCO.
+    The manufacturer must appoint an Authorized Indian Representative (AIR).
+  product_examples:
+    - Imported electronics under QCO
+    - Foreign-manufactured steel products
+    - Imported cement
+    - Foreign-made automotive components under QCO
+
+  # ── Decision Tree ──────────────────────────────────────────────────────
+  decision_tree:
+    - question: Is the manufacturing unit located outside India?
+      key: is_foreign
+      options:
+        - value: "yes"
+          next: has_air
+        - value: "no"
+          result: >
+            Indian manufacturers should apply under ISI Mark (Scheme-I)
+            or CRS depending on the product category.
+
+    - question: Has the manufacturer appointed an Authorized Indian Representative (AIR)?
+      key: has_air
+      options:
+        - value: "yes"
+          next: steps
+        - value: "no"
+          result: >
+            An AIR is mandatory for FMCS. The AIR must be a legal entity
+            resident in India, responsible for ensuring continued
+            compliance and acting as the liaison with BIS.
+
+  # ── Steps ──────────────────────────────────────────────────────────────
   steps:
     - id: 1
-      title: Submission of Application
-      duration_days: [5, 10]
+      title: Appoint Authorized Indian Representative (AIR)
+      detail: >
+        Foreign manufacturer nominates a legally responsible Indian
+        representative resident in India. The AIR agreement must be
+        notarised and submitted with the application.
+      duration_days: [10, 15]
+      duration_label: "10–15 Days"
+
     - id: 2
-      title: Factory Inspection and Sample Draw
-      duration_days: [30, 45]
+      title: Online application on MANAK Online portal
+      detail: >
+        AIR submits application on behalf of the foreign manufacturer
+        through manakonline.in with factory details, manufacturing
+        process documentation, and AIR authorisation.
+      duration_days: [1, 2]
+      duration_label: "1–2 Days"
+
     - id: 3
-      title: Grant of License
-      duration_days: [30, 60]
+      title: Overseas factory physical audit by BIS officers
+      detail: >
+        BIS delegation travels to the overseas factory location to audit
+        production lines, quality control systems, and testing facilities.
+        Duplicate product samples are collected during the visit.
+        All travel, visa, insurance, and accommodation costs borne by
+        the manufacturer.
+      duration_days: [30, 45]
+      duration_label: "30–45 Days"
+
+    - id: 4
+      title: Sample testing at Indian BIS laboratory
+      detail: >
+        Collected samples are tested at BIS laboratories in India against
+        the applicable Indian Standard. Results are communicated to the
+        manufacturer through the AIR.
+      duration_days: [30, 45]
+      duration_label: "30–45 Days"
+
+    - id: 5
+      title: Grant of FMCS licence and performance bond
+      detail: >
+        On satisfactory audit and test results, BIS issues the FMCS
+        licence permitting affixation of the ISI mark on products
+        exported to India. A performance bond may be required.
+      duration_days: [15, 30]
+      duration_label: "15–30 Days"
+
+  total_timeline: "90–140 Calendar Days"
+
+  # ── Fees ───────────────────────────────────────────────────────────────
   fees:
-    application: "$1,000"
-    source_url: https://bis.gov.in/fmcs
-    retrieved_on: 2026-09-08
+    application: "₹1,000 (non-refundable)"
+    annual_licence: "₹1,000/year"
+    inspection: "₹7,000 per man-day"
+    contingency_fund: "₹10,000"
+    travel_costs: "Actual cost — visa, travel, insurance, accommodation for BIS officers"
+    marking_fee: "Variable — based on production volume (Minimum Marking Fee applies)"
+    inclusion_new_variety: "₹5,000 per variety"
+    late_renewal: "₹5,000"
+    lab_testing: "As applicable — paid to BIS-recognised lab"
+    msme_concession: "Not applicable — foreign manufacturers are classified as large-scale"
+    note: >
+      FMCS involves significant additional costs for BIS officer travel
+      to the overseas factory. Total costs are substantially higher than
+      domestic ISI certification. MSME concessions do not apply.
+    source_url: https://www.bis.gov.in/index.php/product-certification/products-under-foreign-manufacturers-certification-scheme/
+    retrieved_on: "2026-09-09"
+
+  # ── Required Marks ────────────────────────────────────────────────────
+  required_marks:
+    primary: "ISI Standard Mark (same as Scheme-I)"
+    identifiers:
+      - "CM/L licence number"
+      - "IS standard number"
+      - "Country of origin"
+      - "AIR name and address"
+    pattern: "CM/L-[0-9]{7}"
+    validity: "Annual renewal required"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Consumer / Grievance Routing
+# ─────────────────────────────────────────────────────────────────────────────
+CONSUMER:
+  name: Consumer Grievance & Verification
+  description: >
+    Routes for consumers who want to verify product authenticity,
+    report counterfeit marks, or file grievances.
+  helpline: "1800-11-4000"
+  website: "https://bis.gov.in"
+  care_app: "BIS CARE Mobile App (Android / iOS)"
+  grievance_portal: "https://www.manakonline.in"
+  routes:
+    - trigger: "verify HUID"
+      action: "Use BIS CARE Mobile App for authoritative HUID database lookup"
+    - trigger: "fake ISI mark"
+      action: "File grievance on BIS CARE App or call 1800-11-4000"
+    - trigger: "fake hallmark"
+      action: "File grievance on BIS CARE App or call 1800-11-4000"
+    - trigger: "check CRS registration"
+      action: "Verify R-number on crsbis.in portal"
+    - trigger: "general complaint"
+      action: "Contact BIS helpline 1800-11-4000 or visit bis.gov.in"

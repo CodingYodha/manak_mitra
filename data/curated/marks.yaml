@@ -1,0 +1,118 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Manak Mitra — Mark Grammar Definitions
+# Owner: Jay · feat/jay
+#
+# Defines the structural syntax rules for genuine BIS certification marks.
+# Used by api/marks.py for structural validation of HUID, ISI licence
+# numbers, CRS R-numbers, and purity codes.
+#
+# IMPORTANT: This file defines STRUCTURAL validation only.
+# We do NOT claim live database verification for any mark type.
+# Authoritative verification requires BIS CARE App or official portals.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── HUID (Hallmark Unique Identification) ────────────────────────────────
+huid:
+  description: >
+    Unique 6-character alphanumeric code laser-engraved on every
+    hallmarked gold/silver article in India. Assigned by BIS and
+    synchronised to the central HUID server.
+  length: 6
+  charset: "[0-9A-Z]"
+  pattern: "^[0-9A-Z]{6}$"
+  examples:
+    valid: ["9A2F8K", "AB12CD", "X7Y3Z1", "000001"]
+    invalid: ["9a2f8k", "AB-12C", "ABCDEFG", "12345"]
+  verification:
+    authoritative: "BIS CARE Mobile App"
+    portal: "https://bis.gov.in"
+    disclaimer: >
+      There is no public HUID verification API. Resolution happens only
+      inside the BIS CARE app. Manak Mitra reads the mark, checks its
+      structure, and catches counterfeits that fail structurally. For
+      authoritative confirmation, hand off to BIS CARE.
+
+# ── Gold Purity / Fineness Codes ─────────────────────────────────────────
+purity:
+  description: >
+    Official BIS-recognised fineness grades for gold and gold alloys.
+    Stamped alongside the HUID on hallmarked jewellery.
+  valid: ["375", "585", "750", "916", "958", "999"]
+  labels:
+    "375": "9 Karat"
+    "585": "14 Karat"
+    "750": "18 Karat"
+    "916": "22 Karat"
+    "958": "23 Karat"
+    "999": "24 Karat (Fine Gold)"
+  governing_standard: "IS 1417"
+
+# ── ISI Licence Number (CM/L) ───────────────────────────────────────────
+isi_licence:
+  description: >
+    Certificate of Manufacture and Licence number issued under BIS
+    Scheme-I (ISI Mark). Format is CM/L followed by a hyphen and
+    exactly 7 numeric digits.
+  pattern: "^CM/L-[0-9]{7}$"
+  examples:
+    valid: ["CM/L-1234567", "CM/L-0000001", "CM/L-9999999"]
+    invalid: ["CM/L-123456", "CM/L-12345678", "CML-1234567", "CM/L 1234567"]
+  verification:
+    authoritative: "BIS MANAK Online Portal"
+    portal: "https://www.manakonline.in"
+
+# ── CRS Registration Number (R-number) ──────────────────────────────────
+crs_rnumber:
+  description: >
+    Compulsory Registration Scheme registration number issued for
+    electronic and IT goods. Format is R followed by a hyphen and
+    exactly 8 numeric digits.
+  pattern: "^R-[0-9]{8}$"
+  examples:
+    valid: ["R-41001234", "R-00000001", "R-99999999"]
+    invalid: ["R-4100123", "R-410012345", "R41001234", "R 41001234"]
+  verification:
+    authoritative: "CRS BIS Portal"
+    portal: "https://crsbis.in"
+
+# ── Structural Validation Rules ─────────────────────────────────────────
+rules:
+  - id: hallmark_completeness
+    text: "A hallmark must show BIS logo + purity + HUID together"
+    applies_to: ["huid"]
+    severity: critical
+
+  - id: isi_mark_completeness
+    text: "An ISI mark without an IS number beneath it is not valid"
+    applies_to: ["isi_licence"]
+    severity: critical
+
+  - id: crs_mark_display
+    text: "CRS registration number must be displayed on the product or packaging"
+    applies_to: ["crs_rnumber"]
+    severity: warning
+
+  - id: huid_format_strict
+    text: "HUID must be exactly 6 characters — no spaces, hyphens, or lowercase"
+    applies_to: ["huid"]
+    severity: critical
+
+  - id: purity_grade_official
+    text: "Only official BIS purity grades are valid: 375, 585, 750, 916, 958, 999"
+    applies_to: ["purity"]
+    severity: critical
+
+# ── OCR Hints (for Tesseract pre-processing) ────────────────────────────
+ocr_hints:
+  huid:
+    expected_chars: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    min_confidence: 0.6
+    preprocessing: "grayscale, threshold, denoise"
+  isi_licence:
+    prefix_hint: "CM/L-"
+    expected_chars: "0123456789CML/-"
+    min_confidence: 0.7
+  crs_rnumber:
+    prefix_hint: "R-"
+    expected_chars: "0123456789R-"
+    min_confidence: 0.7

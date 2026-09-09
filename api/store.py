@@ -226,7 +226,7 @@ def lab_catalog(query: str = "", city: str = "", category: str = "", limit: int 
     with conn() as c:
         total = c.execute("SELECT count(*) FROM labs").fetchone()[0]
         rows = c.execute("""
-            SELECT lab_id, name, city, state, categories
+            SELECT lab_id, name, city, state, lat, lon, categories
             FROM labs
             WHERE lower(city) LIKE ? AND lower(categories) LIKE ?
               AND (lower(name) LIKE ? OR lower(city) LIKE ? OR lower(state) LIKE ? OR lower(categories) LIKE ?)

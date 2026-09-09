@@ -215,7 +215,8 @@ def scheme_catalog() -> Dict[str, Any]:
 
 def labs(city: Optional[str] = None, category: Optional[str] = None,
          is_number: Optional[str] = None,
-         product: Optional[str] = None) -> Dict[str, Any]:
+         product: Optional[str] = None,
+         limit: int = 24) -> Dict[str, Any]:
     """
     Lab lookup: finds nearest accredited BIS lab, matching by specific standard IS number,
     product, or category. Uses graph_queries for real graph traversal when available.
@@ -228,15 +229,15 @@ def labs(city: Optional[str] = None, category: Optional[str] = None,
             import graph_queries as gq  # type: ignore
         effective_product = product or category
         if effective_product and city:
-            graph_labs = gq.labs_near_for_product(effective_product, city)
+            graph_labs = gq.labs_near_for_product(effective_product, city, k=min(limit, 10))
             if graph_labs:
                 return {"labs": graph_labs, "citations": []}
         elif effective_product:
-            graph_labs = gq.labs_for_product(effective_product)[:5]
+            graph_labs = gq.labs_for_product(effective_product)[:limit]
             if graph_labs:
                 return {"labs": graph_labs, "citations": []}
         elif city:
-            return {"labs": gq.labs_by_city(city), "citations": []}
+            return {"labs": gq.labs_by_city(city)[:limit], "citations": []}
     except (ImportError, FileNotFoundError, AttributeError):
         pass
 
@@ -246,14 +247,14 @@ def labs(city: Optional[str] = None, category: Optional[str] = None,
 
     results = []
     if is_number:
-        results = store.get_labs_for_standard(is_number, city or "", limit=4)
+        results = store.get_labs_for_standard(is_number, city or "", limit=limit)
 
     if not results and (category or city or product):
-        results = store.get_nearest_labs(city or "", category or product or "", limit=4)
+        results = store.get_nearest_labs(city or "", category or product or "", limit=limit)
 
     if not results:
         # General fall-back anchor labs
-        results = store.get_nearest_labs("", "", limit=3)
+        results = store.get_nearest_labs("", "", limit=min(limit, 10))
 
     citations = [
         {
