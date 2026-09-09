@@ -40,6 +40,31 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
     # Map intents to answer functions
     if intent == "mandate":
         facts = answers.mandate(q)
+        if not facts.get("mandatory"):
+            rec = answers.recommend(q)
+            hits = rec.get("hits", [])
+            if hits:
+                top_hit = hits[0]
+                qco_rows = store.mandate_for(top_hit["is_number"])
+                if qco_rows:
+                    r = qco_rows[0]
+                    facts = {
+                        "mandatory": True,
+                        "scheme": r["scheme"],
+                        "is_number": r["is_number"],
+                        "effective_on": r["effective_on"],
+                        "hits": hits,
+                        "citations": [{
+                            "kind": "qco",
+                            "ref": r["qco_title"],
+                            "url": r["gazette_url"],
+                            "retrieved_on": r["retrieved_on"]
+                        }] + rec.get("citations", [])
+                    }
+                else:
+                    facts = rec
+            else:
+                facts = rec
     elif intent == "scheme":
         # Simplified: defaults to CRS for demo. A real app would extract the scheme name.
         facts = {"data": answers.scheme("CRS"), "citations": []}

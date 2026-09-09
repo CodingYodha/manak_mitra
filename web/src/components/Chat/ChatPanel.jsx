@@ -5,21 +5,18 @@ import {
   MicOff,
   Volume2,
   FileText,
-  AlertTriangle,
-  ExternalLink,
-  Bot,
-  User,
-  CheckCircle2,
+  ShieldCheck,
   ShieldAlert,
+  ArrowRight,
   Sparkles
 } from 'lucide-react';
 
 const QUICK_PROMPTS = [
   { label: '💡 9W LED Bulb (CRS)', q: 'Do I need BIS certification for 9W LED bulb?' },
-  { label: '🇮🇳 हिंदी प्रश्न (Voice)', q: 'क्या मुझे एलईडी बल्ब के लिए बीआईएस चाहिए?' },
-  { label: '✨ 22K Gold Ring (HUID)', q: 'What are the hallmarking requirements for 22K gold ring?' },
   { label: '🧸 Plastic Toy (ISI)', q: 'What is the mandatory standard for children plastic toys?' },
-  { label: '🚫 Out-of-Domain Refusal', q: 'What is the airspeed of an unladen swallow?' }
+  { label: '✨ 22K Gold Ring (HUID)', q: 'What are the hallmarking requirements for 22K gold ring?' },
+  { label: '🇮🇳 हिंदी प्रश्न (Voice)', q: 'क्या मुझे एलईडी बल्ब के लिए बीआईएस चाहिए?' },
+  { label: '🚫 Swallow (Refusal Demo)', q: 'What is the airspeed of an unladen swallow?' }
 ];
 
 export default function ChatPanel({ onSelectNode, onViewPassport }) {
@@ -27,10 +24,10 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
     {
       id: 1,
       sender: 'bot',
-      text: 'Namaste! I am Manak Mitra, the AI compliance assistant for the Bureau of Indian Standards (BIS). Ask me about Quality Control Orders (QCOs), Indian Standards (IS), certification schemes, fees, or laboratory testing.',
+      text: 'Namaste! I am Manak Mitra, the official compliance intelligence assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory schemes, fees, or testing labs.',
       citations: [],
       abstained: false,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: 'Just now'
     }
   ]);
   const [input, setInput] = useState('');
@@ -58,7 +55,7 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
       id: Date.now(),
       sender: 'user',
       text: q,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: 'Now'
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -86,26 +83,26 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
         highlight_nodes: data.highlight_nodes || [],
         passport_url: data.passport_url || '',
         product: q,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: 'Now'
       };
 
       setMessages((prev) => [...prev, botMsg]);
 
-      // If response has highlight nodes, pass to parent for knowledge graph
       if (data.highlight_nodes && data.highlight_nodes.length > 0 && onSelectNode) {
         onSelectNode(data.highlight_nodes[0]);
       }
     } catch (err) {
       console.error('Chat error:', err);
+      // Clean fallback if local server is starting
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           sender: 'bot',
-          text: 'Unable to connect to the standards intelligence server. Please ensure the backend is running on port 8000.',
+          text: 'Unable to reach backend on port 8000. Please verify the FastAPI server is running with `uvicorn api.main:app`.',
           citations: [],
           abstained: true,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          timestamp: 'Now'
         }
       ]);
     } finally {
@@ -113,8 +110,8 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
     }
   };
 
-  // Browser Speech-to-Text (STT)
-  const toggleVoiceInput = () => {
+  // Browser Voice Input (SpeechRecognition)
+  const toggleVoice = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert('Speech Recognition is not supported in this browser. Please use Chrome or Edge.');
@@ -128,19 +125,18 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.lang = 'hi-IN'; // Recognizes Hindi and Indian English
+      recognition.lang = 'hi-IN';
       recognition.interimResults = false;
 
       recognition.onstart = () => setIsListening(true);
       recognition.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        setInput(transcript);
+        const text = e.results[0][0].transcript;
+        setInput(text);
         setIsListening(false);
-        handleSend(transcript);
+        handleSend(text);
       };
       recognition.onerror = () => setIsListening(false);
       recognition.onend = () => setIsListening(false);
-
       recognition.start();
     } catch (e) {
       console.error(e);
@@ -148,135 +144,110 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
     }
   };
 
-  // Browser Text-to-Speech (TTS)
+  // Browser Voice Output (SpeechSynthesis)
   const speakText = (text) => {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
-
     const utterance = new SpeechSynthesisUtterance(text);
     const hasHindi = /[\u0900-\u097F]/.test(text);
     utterance.lang = hasHindi ? 'hi-IN' : 'en-IN';
-    utterance.rate = 1.0;
     window.speechSynthesis.speak(utterance);
   };
 
   return (
-    <div className="chat-container">
+    <div className="editorial-chat-box">
+      {/* Top bar */}
+      <div className="chat-box-topbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ShieldCheck size={18} color="#181d26" />
+          <span style={{ fontWeight: 600, fontSize: '14px', color: '#181d26' }}>
+            Interactive Compliance Engine
+          </span>
+          <span style={{ fontSize: '12px', color: '#64748b' }}>· 23,573 Standards</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#15803d', fontWeight: 500 }}>
+          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }}></span>
+          Zero-Hallucination Guardrails
+        </div>
+      </div>
+
       {/* Messages Scroll Area */}
-      <div className="chat-messages">
+      <div className="chat-box-messages">
         {messages.map((m) => (
-          <div key={m.id} className={`msg-row ${m.sender}`}>
-            <div className={`msg-avatar ${m.sender}`}>
-              {m.sender === 'bot' ? <Bot size={20} /> : <User size={20} />}
-            </div>
+          <div key={m.id} className={`chat-msg-row ${m.sender}`}>
+            <div className="chat-bubble">
+              <div>{m.text}</div>
 
-            <div className="msg-bubble-wrapper">
-              <div className="msg-bubble">
-                <div className="msg-text">{m.text}</div>
-
-                {/* Citations Box */}
-                {m.citations && m.citations.length > 0 && (
-                  <div className="citations-box">
-                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>
-                      Official Citations:
-                    </span>
-                    {m.citations.map((c, i) => (
-                      <span
-                        key={i}
-                        className={`citation-chip ${c.kind}`}
-                        title={c.ref}
-                      >
-                        {c.kind === 'standard' ? '🏷️ ' : '📜 '}
-                        {c.ref}
-                        {c.status && ` (${c.status})`}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Refusal / Abstention Card */}
-                {m.abstained && (
-                  <div className="refusal-card">
-                    <div className="refusal-header">
-                      <ShieldAlert size={18} />
-                      Zero-Hallucination Guardrail Active
-                    </div>
-                    <div className="refusal-body">
-                      This inquiry falls outside authenticated gazette notifications or registered Indian Standards.
-                    </div>
-                    <div className="helpline-badge">
-                      📞 BIS National Helpline: 1800-11-4000
-                    </div>
-                  </div>
-                )}
-
-                {/* Passport Trigger */}
-                {m.passport_url && !m.abstained && (
-                  <div style={{ marginTop: '0.85rem' }}>
-                    <button
-                      onClick={() => onViewPassport(m.product)}
-                      style={{
-                        background: 'rgba(37, 99, 235, 0.2)',
-                        border: '1px solid #3b82f6',
-                        color: '#93c5fd',
-                        padding: '0.4rem 0.85rem',
-                        borderRadius: '8px',
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.4rem'
-                      }}
+              {/* Citations (Official Gazette & IS Standards) */}
+              {m.citations && m.citations.length > 0 && (
+                <div className="chips-container">
+                  {m.citations.map((c, i) => (
+                    <span
+                      key={i}
+                      className={`chip-citation ${c.kind}`}
+                      title={c.ref}
                     >
-                      <FileText size={15} />
-                      View Compliance Passport Dossier
-                    </button>
-                  </div>
-                )}
-              </div>
+                      {c.kind === 'standard' ? '🏷️ ' : '📜 '}
+                      {c.ref}
+                      {c.status ? ` (${c.status})` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
 
-              {/* Message Footer Controls */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  marginTop: '0.25rem',
-                  fontSize: '0.72rem',
-                  color: '#64748b'
-                }}
-              >
-                <span>{m.timestamp}</span>
-                {m.sender === 'bot' && (
+              {/* Refusal / Helpline Alert Card */}
+              {m.abstained && (
+                <div className="refusal-alert-card">
+                  <div className="refusal-alert-title">
+                    <ShieldAlert size={16} />
+                    Official Refusal — Zero-Hallucination Guard Active
+                  </div>
+                  <div>
+                    This inquiry cannot be answered from authenticated gazettes or published Indian Standards.
+                  </div>
+                  <div className="refusal-helpline">
+                    📞 Bureau of Indian Standards Helpline: 1800-11-4000 (bis.gov.in)
+                  </div>
+                </div>
+              )}
+
+              {/* Compliance Passport Callout inside Chat */}
+              {m.passport_url && !m.abstained && (
+                <div style={{ marginTop: '12px' }}>
+                  <button
+                    onClick={() => onViewPassport(m.product)}
+                    className="btn-pill"
+                    style={{ background: '#181d26', color: '#ffffff', border: 'none' }}
+                  >
+                    <FileText size={14} />
+                    View Compliance Passport Dossier
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* Speaker button */}
+              {m.sender === 'bot' && (
+                <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <button
                     onClick={() => speakText(m.text)}
-                    style={{
-                      background: 'none',
-                      color: '#94a3b8',
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '2px'
-                    }}
-                    title="Listen to answer"
+                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+                    title="Read out answer"
                   >
                     <Volume2 size={14} />
                   </button>
-                )}
-              </div>
+                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>{m.timestamp}</span>
+                </div>
+              )}
             </div>
           </div>
         ))}
 
         {loading && (
-          <div className="msg-row bot">
-            <div className="msg-avatar bot">
-              <Bot size={20} />
-            </div>
-            <div className="msg-bubble" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Sparkles size={16} className="status-dot" />
-              <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
-                Consulting BIS Standards database & e-Gazette QCOs...
-              </span>
+          <div className="chat-msg-row bot">
+            <div className="chat-bubble" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b' }}>
+              <Sparkles size={16} color="#181d26" />
+              <span>Verifying against published QCO Gazette notifications & standards index...</span>
             </div>
           </div>
         )}
@@ -284,13 +255,13 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input & Quick Prompts Area */}
-      <div className="chat-input-wrapper">
-        <div className="quick-prompts">
+      {/* Input area */}
+      <div className="chat-input-area">
+        <div className="quick-prompts-row">
           {QUICK_PROMPTS.map((p, idx) => (
             <button
               key={idx}
-              className="prompt-btn"
+              className="quick-prompt-pill"
               onClick={() => handleSend(p.q)}
             >
               {p.label}
@@ -298,31 +269,32 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
           ))}
         </div>
 
-        <div className="input-box-row">
+        <div className="input-row-controls">
           <button
-            className={`action-btn mic ${isListening ? 'listening' : ''}`}
-            onClick={toggleVoiceInput}
-            title={isListening ? 'Listening (click to stop)...' : 'Ask by Hindi / English voice'}
+            className={`mic-toggle-btn ${isListening ? 'listening' : ''}`}
+            onClick={toggleVoice}
+            title={isListening ? 'Listening... click to stop' : 'Ask by Hindi/English Voice'}
           >
             {isListening ? <MicOff size={18} /> : <Mic size={18} />}
           </button>
 
           <input
             type="text"
-            className="chat-input"
-            placeholder="Ask about a product, IS standard, or HSN code (e.g. 9W LED bulb, 22K gold, toys)..."
+            className="editorial-input"
+            placeholder="Type a product name, IS number, or HSN code (e.g. 9W LED bulb, 22K gold, toys)..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           />
 
           <button
-            className="action-btn send"
+            className="btn-primary"
+            style={{ padding: '8px 16px', fontSize: '14px' }}
             onClick={() => handleSend()}
             disabled={!input.trim() || loading}
-            title="Send inquiry"
           >
-            <Send size={18} />
+            <Send size={15} />
+            Ask
           </button>
         </div>
       </div>

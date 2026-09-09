@@ -101,9 +101,9 @@ def mandate_for(term: str):
         return [dict(r) for r in c.execute("""
             SELECT i.*, q.title AS qco_title, q.gazette_url, q.retrieved_on
             FROM qco_items i JOIN qco q ON q.qco_id = i.qco_id
-            WHERE lower(i.product_desc) LIKE ? OR i.hsn_codes LIKE ?
+            WHERE lower(i.product_desc) LIKE ? OR i.hsn_codes LIKE ? OR lower(i.is_number) LIKE ?
             ORDER BY i.confidence DESC
-        """, (q, q))]
+        """, (q, q, q))]
 
 def log(**kw):
     with conn() as c:
