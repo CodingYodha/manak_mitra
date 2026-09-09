@@ -1,22 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import LandingPage from './components/LandingPage';
 import ChatAssistant from './components/Chat/ChatAssistant';
-import StandardsGraph from './components/KnowledgeGraph/StandardsGraph';
 import CompliancePassport from './components/Passport/CompliancePassport';
 import MarkVerifier from './components/MarkVerifier/MarkVerifier';
 import SchemeTimeline from './components/Schemes/SchemeTimeline';
-import LabLocator from './components/LabLocator/LabLocator';
 import MinistryDashboard from './components/Dashboard/MinistryDashboard';
 import ComplianceJourney from './components/ComplianceJourney';
 import Footer from './components/Footer';
 
-import { ChevronsRight, Sparkles } from 'lucide-react';
+import { ChevronsRight, MapPin, Sparkles } from 'lucide-react';
+
+// The 3D graph renderer is the heaviest part of the product. Loading it only
+// when requested keeps the assistant and compliance workflows immediately usable.
+const StandardsGraph = lazy(() => import('./components/KnowledgeGraph/StandardsGraph'));
+const LabLocator = lazy(() => import('./components/LabLocator/LabLocator'));
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('view');
+    return ['home', 'ai', 'graph', 'journey', 'passport', 'verifier', 'schemes', 'labs', 'dashboard'].includes(requested) ? requested : 'home';
+  });
   const [focusedStandard, setFocusedStandard] = useState(null);
-  const [initialAssistantQuery, setInitialAssistantQuery] = useState(null);
+  const [initialAssistantQuery, setInitialAssistantQuery] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('view') === 'ai' ? params.get('q') : null;
+  });
+  const [passportProduct, setPassportProduct] = useState(() => new URLSearchParams(window.location.search).get('product') || '');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Ensure sidebar always defaults to open upon page refresh
@@ -96,7 +106,13 @@ export default function App() {
     setActiveTab('graph');
   };
 
-  const handleOpenPassport = () => {
+  const handleOpenPassport = (product = '') => {
+    if (product) {
+      setPassportProduct(product);
+      const url = new URL(window.location.href);
+      url.searchParams.set('product', product);
+      window.history.replaceState({}, '', url);
+    }
     setActiveTab('passport');
   };
 
@@ -106,6 +122,10 @@ export default function App() {
 
   const handleNavigate = (tab) => {
     setActiveTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === 'home') url.searchParams.delete('view');
+    else url.searchParams.set('view', tab);
+    window.history.replaceState({}, '', url);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -169,23 +189,31 @@ export default function App() {
 
         {/* ── STANDARDS KNOWLEDGE GRAPH ── */}
         {activeTab === 'graph' && (
-          <StandardsGraph
-            focusedStandard={focusedStandard}
-            onSelectStandard={(std) => setFocusedStandard(std)}
-          />
+          <Suspense fallback={(
+            <div className="page-state-panel" role="status">
+              <Sparkles size={22} />
+              <strong>Preparing the standards graph…</strong>
+              <span>Loading the 26,835-node catalogue on demand.</span>
+            </div>
+          )}>
+            <StandardsGraph
+              focusedStandard={focusedStandard}
+              onSelectStandard={(std) => setFocusedStandard(std)}
+            />
+          </Suspense>
         )}
 
         {/* ── COMPLIANCE JOURNEY ── */}
         {activeTab === 'journey' && (
           <ComplianceJourney
-            onOpenPassport={() => handleNavigate('passport')}
+            onOpenPassport={handleOpenPassport}
             onOpenLabs={() => handleNavigate('labs')}
           />
         )}
 
         {/* ── COMPLIANCE PASSPORT ── */}
         {activeTab === 'passport' && (
-          <CompliancePassport />
+          <CompliancePassport initialProduct={passportProduct} />
         )}
 
         {/* ── MARK VERIFIER ── */}
@@ -200,7 +228,15 @@ export default function App() {
 
         {/* ── TESTING LABORATORIES ── */}
         {activeTab === 'labs' && (
-          <LabLocator />
+          <Suspense fallback={(
+            <div className="page-state-panel" role="status">
+              <MapPin size={22} />
+              <strong>Preparing the laboratory map…</strong>
+              <span>Loading verified scopes and map tiles on demand.</span>
+            </div>
+          )}>
+            <LabLocator />
+          </Suspense>
         )}
 
         {/* ── MINISTRY DASHBOARD ── */}

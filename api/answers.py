@@ -301,7 +301,7 @@ def passport(product: str, candidate_id: Optional[int] = None, city: str = "") -
         selected = next((item for item in candidates if item["id"] == candidate_id), None)
         if not selected:
             return {"status": "needs_disambiguation", "product": product, "reason": "Select one of the current catalogue matches.", "candidates": candidates}
-    elif len(candidates) == 1 and candidates[0].get("exact_match"):
+    elif len({(item.get("qco_id"), item.get("is_number"), item.get("scheme")) for item in candidates}) == 1:
         selected = candidates[0]
 
     if not selected:
@@ -384,6 +384,21 @@ def graph(highlight: Optional[List[str]] = None) -> Dict[str, Any]:
                 nodes.append({"id": h, "group": "highlight", "label": h})
 
     return {"nodes": nodes, "links": [], "highlight_nodes": highlight or []}
+
+
+def graph_grounding(is_numbers: List[str], product_hint: str = "") -> Dict[str, Any]:
+    """Build the compact knowledge-graph evidence attached to chat answers."""
+    if not is_numbers:
+        return {"available": False, "mode": "retrieval_only", "standards": []}
+    try:
+        from api import graph_queries as gq
+        return gq.grounding_trace(is_numbers, product_hint=product_hint)
+    except (ImportError, FileNotFoundError, AttributeError):
+        return {
+            "available": False,
+            "mode": "retrieval_only",
+            "standards": [{"is_number": value, "label": value} for value in is_numbers[:3]],
+        }
 
 
 def _call_gemini_llm(prompt: str, api_key: str) -> Optional[str]:
@@ -557,6 +572,7 @@ def _build_prompt(facts: Dict[str, Any], question: str, lang: str = "en") -> str
         f"{web_context}\n\n"
         f"INSTRUCTIONS FOR YOUR RESPONSE:\n"
         f"1. Provide a detailed, clear, and well-structured response directly answering the user's question.\n"
+        f"   Keep the answer concise (roughly 180–320 words) and front-load the decision. Do not repeat the same fact in multiple sections.\n"
         f"2. Clearly cover all relevant aspects found in the facts:\n"
         f"   - **Mandatory Status & Regulation**: State clearly whether certification is mandatory, referencing the specific Quality Control Order (QCO) title or ministry order if available.\n"
         f"   - **Applicable Indian Standard(s)**: Mention the exact IS number(s) (e.g., IS 16102 (Part 1)) and product title from the facts.\n"

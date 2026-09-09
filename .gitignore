@@ -8,6 +8,7 @@ __pycache__/
 # Model cache (downloaded at runtime)
 # vectors.npy and vectors_meta.json are COMMITTED (not ignored)
 # .cache/
+services/realtime_stt/models/
 
 # Database — committed after seeding
 # manak.db is COMMITTED after seeding

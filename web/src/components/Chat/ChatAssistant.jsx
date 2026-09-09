@@ -20,13 +20,29 @@ import {
   FileCheck,
   Database,
   History,
+  Network,
   Trash2,
-  X,
-  Search,
-  MessageSquare,
-  Plus
+  ChevronRight,
+  FlaskConical
 } from 'lucide-react';
 import { apiUrl } from '../../config';
+import { startRealtimeStt } from '../../lib/realtimeStt';
+import {
+  createConversationRecord,
+  deleteConversation,
+  getConversation,
+  listConversations,
+  saveConversation
+} from '../../lib/chatStore';
+
+const welcomeMessage = () => ({
+  id: Date.now(),
+  sender: 'bot',
+  text: 'Namaste! I am Manak Mitra, your official compliance assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory certification schemes, fees, or laboratory testing.',
+  citations: [],
+  abstained: false,
+  timestamp: 'Just now'
+});
 
 const STARTER_PROMPT_CARDS = [
   {
@@ -286,86 +302,133 @@ function FormattedMessage({ text }) {
   );
 }
 
-const STORAGE_KEY = 'manak_mitra_chat_sessions_v2';
-const ACTIVE_CHAT_KEY = 'manak_mitra_active_chat_id';
+function GroundingPanel({ grounding, citations = [] }) {
+  if (!grounding?.available) return null;
+  const standard = grounding.standards?.[0];
+  const qco = grounding.qcos?.[0];
+  const scheme = grounding.schemes?.[0];
+  const sector = grounding.sectors?.[0];
+  const labCount = grounding.labs?.length || 0;
 
-const DEFAULT_BOT_MESSAGE = {
-  id: 'greeting_msg',
-  sender: 'bot',
-  text: 'Namaste! I am Manak Mitra, your official compliance assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory certification schemes, fees, or laboratory testing.',
-  citations: [],
-  abstained: false,
-  timestamp: 'Just now'
-};
-
-function formatHistoryDate(timestamp) {
-  if (!timestamp) return 'Recently';
-  const diff = Date.now() - timestamp;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 3600000);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 86400000);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return (
+    <details className="grounding-panel" open>
+      <summary>
+        <span className="grounding-summary-icon"><Network size={15} /></span>
+        <span><strong>Why this answer</strong><small>Live knowledge-graph evidence trace</small></span>
+        <span className="grounding-confidence"><ShieldCheck size={12} /> {citations.length} verified source{citations.length === 1 ? '' : 's'}</span>
+      </summary>
+      <div className="grounding-body">
+        <div className="grounding-path" aria-label="Knowledge graph traversal path">
+          <span className="grounding-node query"><Sparkles size={12} /> Query</span>
+          <ChevronRight size={14} />
+          <span className="grounding-node standard"><Tag size={12} /> {standard?.is_number || 'Standard'}</span>
+          {(qco || scheme) && <><ChevronRight size={14} /><span className="grounding-node regulation"><FileCheck size={12} /> {scheme?.label || qco?.label || 'QCO'}</span></>}
+          {labCount > 0 && <><ChevronRight size={14} /><span className="grounding-node lab"><FlaskConical size={12} /> {labCount} scoped labs shown</span></>}
+        </div>
+        <div className="grounding-metrics">
+          <div><strong>{grounding.relationship_count || 0}</strong><span>relationships traversed</span></div>
+          <div><strong>{grounding.catalog?.nodes?.toLocaleString?.() || grounding.catalog?.nodes}</strong><span>catalogue nodes</span></div>
+          <div><strong>{grounding.catalog?.edges?.toLocaleString?.() || grounding.catalog?.edges}</strong><span>graph connections</span></div>
+          <div><strong>{sector?.code || '—'}</strong><span>{sector?.label || 'ICS sector'}</span></div>
+        </div>
+        {grounding.labs?.length > 0 && (
+          <div className="grounding-labs">
+            <span>Scope-linked facilities:</span> {grounding.labs.slice(0, 3).map((lab) => `${lab.label}${lab.city ? `, ${lab.city}` : ''}`).join(' · ')}
+          </div>
+        )}
+      </div>
+    </details>
+  );
 }
 
 export default function ChatAssistant({ onSelectNode, onViewPassport, initialQuery, onNavigate }) {
-  // Load saved sessions containing at least one user query
-  const [sessions, setSessions] = useState(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          return parsed.filter(
-            (s) => s && s.id && Array.isArray(s.messages) && s.messages.some((m) => m.sender === 'user')
-          );
-        }
-      }
-    } catch (e) {
-      console.error('Failed to read chat history:', e);
-    }
-    return [];
-  });
-
-  const [activeSessionId, setActiveSessionId] = useState(() => {
-    try {
-      const savedActive = localStorage.getItem(ACTIVE_CHAT_KEY);
-      if (savedActive) return savedActive;
-    } catch {}
-    return `session_${Date.now()}`;
-  });
-
-  const [messages, setMessages] = useState(() => {
-    try {
-      const savedActive = localStorage.getItem(ACTIVE_CHAT_KEY);
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (savedActive && raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const match = parsed.find((s) => s.id === savedActive);
-          if (match && Array.isArray(match.messages) && match.messages.length > 0) {
-            return match.messages;
-          }
-        }
-      }
-    } catch (e) {}
-    return [DEFAULT_BOT_MESSAGE];
-  });
-
+  const [messages, setMessages] = useState([welcomeMessage()]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState({ state: 'idle', label: '' });
+  const [voiceLatency, setVoiceLatency] = useState(null);
+  const [voiceDraftLanguage, setVoiceDraftLanguage] = useState(null);
+  const [sttAvailable, setSttAvailable] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [historySearch, setHistorySearch] = useState('');
-  const [showSavedTooltip, setShowSavedTooltip] = useState(false);
-  const [saveStatus, setSaveStatus] = useState('idle');
+  const [conversationId, setConversationId] = useState(null);
+  const [conversationCreatedAt, setConversationCreatedAt] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [storageError, setStorageError] = useState('');
   const messagesEndRef = useRef(null);
-  const processedInitialQueryRef = useRef(null);
+  const persistenceTimerRef = useRef(null);
+  const initialQueryHandledRef = useRef(false);
+  const voiceSessionRef = useRef(null);
+  const browserRecognitionRef = useRef(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(apiUrl('/api/stt/status'), { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('STT status unavailable')))
+      .then((status) => setSttAvailable(Boolean(status.available)))
+      .catch((error) => {
+        if (error.name !== 'AbortError') setSttAvailable(false);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function hydrateHistory() {
+      try {
+        const rows = await listConversations();
+        if (cancelled) return;
+        if (rows.length) {
+          const latest = rows[0];
+          const restoredMessages = (latest.messages || [])
+            .filter((message) => !(message.sender === 'bot' && message.isStreaming && !message.text))
+            .map((message) => message.isStreaming ? { ...message, isStreaming: false } : message);
+          setConversations(rows);
+          setConversationId(latest.id);
+          setConversationCreatedAt(latest.createdAt);
+          setMessages(restoredMessages.length ? restoredMessages : [welcomeMessage()]);
+        } else {
+          const initial = createConversationRecord([welcomeMessage()]);
+          await saveConversation(initial);
+          if (cancelled) return;
+          setConversationId(initial.id);
+          setConversationCreatedAt(initial.createdAt);
+          setConversations([initial]);
+          setMessages(initial.messages);
+        }
+      } catch (error) {
+        if (!cancelled) setStorageError(error.message || 'Local history is unavailable.');
+      } finally {
+        if (!cancelled) setHistoryReady(true);
+      }
+    }
+    hydrateHistory();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!historyReady || !conversationId) return undefined;
+    window.clearTimeout(persistenceTimerRef.current);
+    persistenceTimerRef.current = window.setTimeout(async () => {
+      const firstQuestion = messages.find((message) => message.sender === 'user')?.text;
+      const record = {
+        id: conversationId,
+        title: firstQuestion ? firstQuestion.slice(0, 64) : 'New compliance inquiry',
+        messages,
+        createdAt: conversationCreatedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      try {
+        await saveConversation(record);
+        setConversations((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+      } catch (error) {
+        setStorageError(error.message || 'Unable to save this conversation locally.');
+      }
+    }, 450);
+    return () => window.clearTimeout(persistenceTimerRef.current);
+  }, [messages, conversationId, conversationCreatedAt, historyReady]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -375,171 +438,21 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
     scrollToBottom();
   }, [messages, loading]);
 
-  // Persist sessions array to localStorage safely
-  const persistSessions = (newSessions) => {
-    try {
-      const valid = newSessions.filter(
-        (s) => s && s.id && Array.isArray(s.messages) && s.messages.some((m) => m.sender === 'user')
-      );
-      setSessions(valid);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(valid));
-    } catch (e) {
-      console.error('Failed to write chat sessions:', e);
-    }
-  };
-
-  // Helper to save finalized messages for a session
-  const saveSessionMessages = (sessionId, currentMessages, firstQueryText = null) => {
-    const hasUserMsg = currentMessages.some((m) => m.sender === 'user');
-    if (!hasUserMsg) return; // Never save empty sessions!
-
-    const firstUserMsg = currentMessages.find((m) => m.sender === 'user');
-    const autoTitle = firstQueryText || (firstUserMsg ? firstUserMsg.text : 'Compliance Inquiry');
-    const cleanTitle = autoTitle.length > 45 ? autoTitle.substring(0, 42) + '...' : autoTitle;
-
-    setSessions((prevSessions) => {
-      const existingIdx = prevSessions.findIndex((s) => s.id === sessionId);
-      let updated;
-      if (existingIdx >= 0) {
-        updated = prevSessions.map((s, idx) =>
-          idx === existingIdx
-            ? {
-                ...s,
-                title: s.title || cleanTitle,
-                updatedAt: Date.now(),
-                messages: currentMessages
-              }
-            : s
-        );
-      } else {
-        const newSession = {
-          id: sessionId,
-          title: cleanTitle,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          messages: currentMessages
-        };
-        updated = [newSession, ...prevSessions];
-      }
-
-      try {
-        const valid = updated.filter(
-          (s) => s && s.id && Array.isArray(s.messages) && s.messages.some((m) => m.sender === 'user')
-        );
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(valid));
-        localStorage.setItem(ACTIVE_CHAT_KEY, sessionId);
-      } catch (e) {}
-
-      return updated;
-    });
-
-    setSaveStatus('saved');
-    setTimeout(() => setSaveStatus('idle'), 2500);
-  };
-
-  // Handle New Chat: Bulletproof against infinite chat creation
-  const handleNewChat = () => {
-    const hasUserMsg = messages.some((m) => m.sender === 'user');
-    if (!hasUserMsg) {
-      // Already on a fresh empty chat! DO NOT create another session or increment counter
-      setInput('');
-      setIsHistoryOpen(false);
-      return;
-    }
-
-    // Current chat has conversation: ensure it is saved
-    saveSessionMessages(activeSessionId, messages);
-
-    // Create fresh draft session
-    const freshId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    setActiveSessionId(freshId);
-    setMessages([DEFAULT_BOT_MESSAGE]);
-    setInput('');
-    try {
-      localStorage.setItem(ACTIVE_CHAT_KEY, freshId);
-    } catch {}
-    setIsHistoryOpen(false);
-  };
-
-  const handleSelectSession = (sessionId) => {
-    if (sessionId === activeSessionId) {
-      setIsHistoryOpen(false);
-      return;
-    }
-    if (messages.some((m) => m.sender === 'user')) {
-      saveSessionMessages(activeSessionId, messages);
-    }
-    const target = sessions.find((s) => s.id === sessionId);
-    if (target && Array.isArray(target.messages)) {
-      setActiveSessionId(target.id);
-      setMessages(target.messages);
-      try {
-        localStorage.setItem(ACTIVE_CHAT_KEY, target.id);
-      } catch {}
-    }
-    setIsHistoryOpen(false);
-  };
-
-  const handleDeleteSession = (e, sessionId) => {
-    e.stopPropagation();
-    const remaining = sessions.filter((s) => s.id !== sessionId);
-    persistSessions(remaining);
-
-    if (activeSessionId === sessionId) {
-      if (remaining.length > 0) {
-        setActiveSessionId(remaining[0].id);
-        setMessages(remaining[0].messages);
-        try {
-          localStorage.setItem(ACTIVE_CHAT_KEY, remaining[0].id);
-        } catch {}
-      } else {
-        const freshId = `session_${Date.now()}`;
-        setActiveSessionId(freshId);
-        setMessages([DEFAULT_BOT_MESSAGE]);
-        try {
-          localStorage.setItem(ACTIVE_CHAT_KEY, freshId);
-        } catch {}
-      }
-    }
-  };
-
-  const handleClearAllHistory = () => {
-    if (window.confirm('Are you sure you want to delete all saved chat history on this device?')) {
-      persistSessions([]);
-      const freshId = `session_${Date.now()}`;
-      setActiveSessionId(freshId);
-      setMessages([DEFAULT_BOT_MESSAGE]);
-      try {
-        localStorage.setItem(ACTIVE_CHAT_KEY, freshId);
-      } catch {}
-      setIsHistoryOpen(false);
-    }
-  };
-
   useEffect(() => {
-    if (initialQuery && processedInitialQueryRef.current !== initialQuery) {
-      processedInitialQueryRef.current = initialQuery;
-      const hasUserMsg = messages.some((m) => m.sender === 'user');
-      if (hasUserMsg) {
-        saveSessionMessages(activeSessionId, messages);
-        const freshId = `session_${Date.now()}`;
-        setActiveSessionId(freshId);
-        setMessages([DEFAULT_BOT_MESSAGE]);
-        try {
-          localStorage.setItem(ACTIVE_CHAT_KEY, freshId);
-        } catch {}
-      }
+    if (historyReady && initialQuery && !initialQueryHandledRef.current) {
+      initialQueryHandledRef.current = true;
       setInput(initialQuery);
       handleSend(initialQuery);
     }
-  }, [initialQuery]);
+  }, [initialQuery, historyReady]);
 
-  const handleSend = async (queryText) => {
+  const handleSend = async (queryText, languageOverride) => {
     const q = (queryText || input).trim();
     if (!q || loading) return;
 
     const hasHindi = /[\u0900-\u097F]/.test(q);
-    const lang = hasHindi ? 'hi' : 'en';
+    const detectedDraftLanguage = queryText ? null : voiceDraftLanguage;
+    const lang = languageOverride === 'hi' || detectedDraftLanguage === 'hi' || hasHindi ? 'hi' : 'en';
 
     const userMsg = {
       id: Date.now(),
@@ -552,6 +465,9 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
 
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    setVoiceDraftLanguage(null);
+    setVoiceStatus({ state: 'idle', label: '' });
+    setVoiceLatency(null);
     setLoading(true);
 
     // Create an empty bot message that will be filled by streaming tokens
@@ -621,6 +537,8 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                           intent: parsed.intent || '',
                           highlight_nodes: parsed.highlight_nodes || [],
                           passport_url: parsed.passport_url || '',
+                          product: parsed.passport_product || q,
+                          grounding: parsed.grounding || {},
                           isStreaming: false
                         }
                       : m
@@ -673,7 +591,8 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                     intent: data.intent,
                     highlight_nodes: data.highlight_nodes || [],
                     passport_url: data.passport_url || '',
-                    product: q,
+                    product: data.passport_product || q,
+                    grounding: data.grounding || {},
                     isStreaming: false
                   }
                 : m
@@ -731,13 +650,45 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
       }
     } finally {
       setLoading(false);
-      setMessages((prev) => {
-        const finalized = prev.map((m) =>
-          m.id === botMsgId ? { ...m, isStreaming: false } : m
-        );
-        saveSessionMessages(activeSessionId, finalized, q);
-        return finalized;
-      });
+    }
+  };
+
+  const handleClearChat = async () => {
+    const record = createConversationRecord([welcomeMessage()]);
+    setConversationId(record.id);
+    setConversationCreatedAt(record.createdAt);
+    setMessages(record.messages);
+    setHistoryOpen(false);
+    try {
+      await saveConversation(record);
+      setConversations((current) => [record, ...current]);
+    } catch (error) {
+      setStorageError(error.message || 'Unable to create a local conversation.');
+    }
+  };
+
+  const handleOpenConversation = async (id) => {
+    try {
+      const record = await getConversation(id);
+      if (!record) return;
+      setConversationId(record.id);
+      setConversationCreatedAt(record.createdAt);
+      setMessages(record.messages?.length ? record.messages : [welcomeMessage()]);
+      setHistoryOpen(false);
+    } catch (error) {
+      setStorageError(error.message || 'Unable to open that conversation.');
+    }
+  };
+
+  const handleDeleteConversation = async (event, id) => {
+    event.stopPropagation();
+    try {
+      await deleteConversation(id);
+      const remaining = conversations.filter((item) => item.id !== id);
+      setConversations(remaining);
+      if (id === conversationId) await handleClearChat();
+    } catch (error) {
+      setStorageError(error.message || 'Unable to remove that conversation.');
     }
   };
 
@@ -747,39 +698,95 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Browser Speech-to-Text (STT)
-  const toggleVoice = () => {
+  const startBrowserSpeechFallback = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Speech Recognition is supported on Chrome & Edge. Please allow microphone access.');
-      return;
-    }
-
-    if (isListening) {
+      setVoiceStatus({ state: 'error', label: 'Microphone transcription is unavailable in this browser.' });
       setIsListening(false);
       return;
     }
-
     try {
       const recognition = new SpeechRecognition();
-      recognition.lang = 'hi-IN'; // Understands both Hindi and Indian English
+      browserRecognitionRef.current = recognition;
+      recognition.lang = /[\u0900-\u097F]/.test(input) ? 'hi-IN' : 'en-IN';
       recognition.interimResults = false;
-
-      recognition.onstart = () => setIsListening(true);
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceStatus({ state: 'fallback', label: 'Browser speech fallback active' });
+      };
       recognition.onresult = (e) => {
         const text = e.results[0][0].transcript;
         setInput(text);
+        setVoiceDraftLanguage(recognition.lang.startsWith('hi') ? 'hi' : 'en');
         setIsListening(false);
-        handleSend(text);
+        setVoiceStatus({ state: 'complete', label: 'Transcript ready · review or edit before sending' });
       };
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
+      recognition.onerror = () => {
+        setIsListening(false);
+        setVoiceStatus({ state: 'error', label: 'Speech recognition failed. Check microphone permission.' });
+      };
+      recognition.onend = () => {
+        browserRecognitionRef.current = null;
+        setIsListening(false);
+      };
       recognition.start();
     } catch (e) {
       console.error(e);
       setIsListening(false);
+      setVoiceStatus({ state: 'error', label: 'Unable to start microphone transcription.' });
     }
   };
+
+  // RealtimeSTT first; browser recognition remains a no-install fallback.
+  const toggleVoice = async () => {
+    if (isListening) {
+      if (voiceSessionRef.current) {
+        await voiceSessionRef.current.stop();
+      } else if (browserRecognitionRef.current) {
+        browserRecognitionRef.current.stop();
+      }
+      setIsListening(false);
+      return;
+    }
+
+    setVoiceLatency(null);
+    setIsListening(true);
+    try {
+      voiceSessionRef.current = await startRealtimeStt({
+        language: 'auto',
+        onPartial: ({ text, language }) => {
+          setInput(text);
+          if (language && language !== 'auto') setVoiceDraftLanguage(language);
+        },
+        onStatus: setVoiceStatus,
+        onFinal: ({ text, language, latencyMs }) => {
+          voiceSessionRef.current = null;
+          setInput(text);
+          setIsListening(false);
+          setVoiceLatency(latencyMs);
+          if (language && language !== 'auto') setVoiceDraftLanguage(language);
+          setVoiceStatus({
+            state: 'complete',
+            label: `Transcript ready${language && language !== 'auto' ? ` · ${language.toUpperCase()}` : ''} · review or edit before sending`
+          });
+        },
+        onError: (error) => {
+          voiceSessionRef.current = null;
+          setIsListening(false);
+          setVoiceStatus({ state: 'error', label: error.message });
+        }
+      });
+    } catch (error) {
+      voiceSessionRef.current = null;
+      setVoiceStatus({ state: 'fallback', label: 'Local STT unavailable · using browser fallback' });
+      startBrowserSpeechFallback();
+    }
+  };
+
+  useEffect(() => () => {
+    voiceSessionRef.current?.cancel?.();
+    browserRecognitionRef.current?.abort?.();
+  }, []);
 
   // Browser Text-to-Speech (TTS)
   const speakText = (text) => {
@@ -795,18 +802,6 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
   };
 
   const isInitialState = messages.length <= 1;
-
-  const savedCount = sessions.filter(
-    (s) => s && s.messages && s.messages.some((m) => m.sender === 'user')
-  ).length;
-
-  const filteredSessions = sessions.filter((s) => {
-    if (!historySearch.trim()) return true;
-    const search = historySearch.toLowerCase();
-    const titleMatch = s.title?.toLowerCase().includes(search);
-    const msgMatch = s.messages?.some((m) => m.text?.toLowerCase().includes(search));
-    return titleMatch || msgMatch;
-  });
 
   return (
     <div className="chatgpt-assistant-container">
@@ -843,67 +838,70 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                   borderRadius: '12px'
                 }}
               >
-                RAG + Exa Web
+                RAG + Knowledge Graph
               </span>
+              {sttAvailable && (
+                <span className="local-voice-ready" title="Multilingual speech recognition runs on this machine">
+                  <Mic size={11} /> Local voice ready
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '11.5px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }}></span>
-              23,573 Standards · Zero-Hallucination Guard Active
+              23,573 Standards · 26,835 Graph Nodes · Guard Active
             </div>
           </div>
         </div>
 
-        <div className="chatgpt-topbar-actions">
-          {/* Saved locally Badge */}
-          <div
-            className="chatgpt-saved-badge"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowSavedTooltip((prev) => !prev);
-            }}
-            title="All chats are stored privately on your local browser (localStorage)"
-          >
-            <Database size={13} style={{ color: '#16a34a' }} />
-            <span>Saved locally</span>
-            {saveStatus === 'saved' && <Check size={12} className="save-tick-anim" />}
-          </div>
-
-          {/* Saved Locally Tooltip / Popover */}
-          {showSavedTooltip && (
-            <div className="chatgpt-saved-tooltip-popover" onClick={(e) => e.stopPropagation()}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#166534', marginBottom: '4px', fontSize: '12.5px' }}>
-                <Database size={14} /> Private Device Storage
-              </div>
-              <p style={{ margin: 0, fontSize: '11.5px', color: '#475569', lineHeight: 1.45 }}>
-                Your compliance conversations are stored securely on this device using browser <code>localStorage</code>. No chat history is saved or analyzed on remote servers.
-              </p>
-            </div>
-          )}
-
-          {/* History Button with Counter Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="local-save-status" title="Conversation content stays in this browser">
+            <Database size={12} /> {historyReady ? 'Saved locally' : 'Opening local DB'}
+          </span>
           <button
-            className="chatgpt-history-btn"
-            onClick={() => setIsHistoryOpen(true)}
-            title="View chat history"
+            onClick={() => setHistoryOpen((current) => !current)}
+            className="chat-topbar-button"
+            title="Open locally saved conversations"
           >
-            <History size={14} />
-            <span>History</span>
-            <span className="chatgpt-history-badge">
-              {savedCount}
-            </span>
+            <History size={13} /> History <span>{conversations.length}</span>
           </button>
-
-          {/* New Chat Button (Dark Navy) */}
           <button
-            className="chatgpt-newchat-btn"
-            onClick={handleNewChat}
-            title="Start a fresh chat"
+            onClick={handleClearChat}
+            className="chat-topbar-button primary"
+            title="Start fresh chat"
           >
             <RotateCcw size={13} />
-            <span>New Chat</span>
+            New Chat
           </button>
         </div>
       </div>
+
+      {historyOpen && (
+        <div className="chat-history-panel">
+          <div className="chat-history-header">
+            <div><strong>Conversation history</strong><span>Private to this browser · IndexedDB</span></div>
+            <button onClick={() => setHistoryOpen(false)} aria-label="Close conversation history">×</button>
+          </div>
+          {storageError && <div className="chat-storage-error">{storageError}</div>}
+          <div className="chat-history-list">
+            {conversations.map((conversation) => (
+              <div
+                key={conversation.id}
+                className={`chat-history-item ${conversation.id === conversationId ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleOpenConversation(conversation.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') handleOpenConversation(conversation.id);
+                }}
+              >
+                <span><strong>{conversation.title}</strong><small>{new Date(conversation.updatedAt).toLocaleString()} · {Math.max(0, (conversation.messages?.length || 1) - 1)} messages</small></span>
+                <button className="chat-history-delete" onClick={(event) => handleDeleteConversation(event, conversation.id)} title="Delete conversation" aria-label={`Delete ${conversation.title}`}><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+          <button className="chat-history-new" onClick={handleClearChat}><RotateCcw size={14} /> Start a new compliance inquiry</button>
+        </div>
+      )}
 
       {/* 2. MESSAGES VIEWPORT — Full-Height Scrollable */}
       <div className="chatgpt-messages-viewport">
@@ -942,7 +940,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
 
           {/* Conversation Stream */}
           {messages.map((m) => (
-            <div key={m.id} className={`chatgpt-row ${m.sender}`}>
+            <div key={m.id} className={`chatgpt-row ${m.sender} ${m.isStreaming && !m.text ? 'stream-empty' : ''}`}>
               {m.sender === 'user' ? (
                 <div className="chatgpt-user-bubble">{m.text}</div>
               ) : (
@@ -958,6 +956,8 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                     {m.isStreaming && (
                       <span className="streaming-cursor">▌</span>
                     )}
+
+                    {!m.isStreaming && <GroundingPanel grounding={m.grounding} citations={m.citations} />}
 
                     {/* Citations (Official Gazette, Standards & Live Web) — hidden for greetings */}
                     {m.citations && m.citations.length > 0 && m.intent !== 'greeting' && !m.isStreaming && (
@@ -1210,7 +1210,14 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
               className="chatgpt-input-field"
               placeholder="Ask about any product, IS standard, QCO, or fees (e.g. 9W LED bulb, 22K gold, toys)..."
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                if (!e.target.value.trim()) {
+                  setVoiceDraftLanguage(null);
+                  setVoiceStatus({ state: 'idle', label: '' });
+                  setVoiceLatency(null);
+                }
+              }}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             />
 
@@ -1224,135 +1231,21 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
             </button>
           </div>
 
+          {voiceStatus.state !== 'idle' && (
+            <div className={`realtime-stt-status ${voiceStatus.state}`} role="status" aria-live="polite">
+              <span className="voice-live-dot" />
+              <strong>{voiceStatus.label}</strong>
+              {isListening && <span className="voice-wave" aria-hidden="true">{[1, 2, 3, 4, 5].map((bar) => <i key={bar} />)}</span>}
+              {voiceLatency !== null && <small>{voiceLatency} ms finalisation</small>}
+              <span className="voice-engine-label">RealtimeSTT · on-device</span>
+            </div>
+          )}
+
           <div className="chatgpt-disclaimer-text">
             Manak Mitra AI answers are strictly grounded in official Bureau of Indian Standards (BIS) publications, gazetted QCOs, and verified web sources.
           </div>
         </div>
       </div>
-
-      {/* 4. CHAT HISTORY SLIDE-OVER DRAWER */}
-      {isHistoryOpen && (
-        <>
-          <div
-            className="chatgpt-history-drawer-backdrop"
-            onClick={() => setIsHistoryOpen(false)}
-          />
-          <div className="chatgpt-history-drawer">
-            <div className="chatgpt-history-drawer-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <History size={16} style={{ color: '#0f172a' }} />
-                <span style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }}>
-                  Chat History
-                </span>
-                <span className="chatgpt-history-badge" style={{ fontSize: '12px' }}>
-                  {savedCount}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  className="chatgpt-history-new-btn"
-                  onClick={handleNewChat}
-                  title="New Chat"
-                >
-                  <Plus size={14} />
-                  <span>New</span>
-                </button>
-                <button
-                  className="chatgpt-history-close-btn"
-                  onClick={() => setIsHistoryOpen(false)}
-                  title="Close history"
-                >
-                  <X size={17} />
-                </button>
-              </div>
-            </div>
-
-            {/* Search Input */}
-            <div className="chatgpt-history-search-box">
-              <Search size={14} style={{ color: '#94a3b8' }} />
-              <input
-                type="text"
-                placeholder="Search past compliance chats..."
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                className="chatgpt-history-search-input"
-              />
-              {historySearch && (
-                <button
-                  onClick={() => setHistorySearch('')}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex', alignItems: 'center' }}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-
-            {/* Sessions List */}
-            <div className="chatgpt-history-list">
-              {filteredSessions.length === 0 ? (
-                <div className="chatgpt-history-empty">
-                  <MessageSquare size={32} style={{ color: '#cbd5e1', marginBottom: '8px' }} />
-                  <div style={{ fontWeight: 600, color: '#64748b', fontSize: '13.5px' }}>
-                    {historySearch ? 'No matching conversations' : 'No saved conversations yet'}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px', maxWidth: '240px', lineHeight: 1.4 }}>
-                    {historySearch ? 'Try searching for another product name or standard.' : 'Ask compliance questions to automatically save conversations locally on this device.'}
-                  </div>
-                </div>
-              ) : (
-                filteredSessions.map((s) => {
-                  const isActive = s.id === activeSessionId;
-                  const lastMsg = [...(s.messages || [])].reverse().find((m) => m.sender === 'bot') || s.messages?.[s.messages?.length - 1];
-                  const preview = lastMsg?.text ? (lastMsg.text.length > 75 ? lastMsg.text.substring(0, 75) + '...' : lastMsg.text) : 'No responses yet';
-                  const userMsgCount = (s.messages || []).filter((m) => m.sender === 'user').length;
-
-                  return (
-                    <div
-                      key={s.id}
-                      className={`chatgpt-history-item ${isActive ? 'active' : ''}`}
-                      onClick={() => handleSelectSession(s.id)}
-                    >
-                      <div className="chatgpt-history-item-top">
-                        <span className="chatgpt-history-item-title" title={s.title}>
-                          {s.title || 'Compliance Inquiry'}
-                        </span>
-                        <button
-                          className="chatgpt-history-item-delete"
-                          onClick={(e) => handleDeleteSession(e, s.id)}
-                          title="Delete chat from device"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                      <div className="chatgpt-history-item-preview">
-                        {preview}
-                      </div>
-                      <div className="chatgpt-history-item-meta">
-                        <span>{formatHistoryDate(s.updatedAt || s.createdAt)}</span>
-                        <span>•</span>
-                        <span>{userMsgCount} {userMsgCount === 1 ? 'query' : 'queries'}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Footer: Clear All History */}
-            {sessions.length > 0 && (
-              <div className="chatgpt-history-footer">
-                <button
-                  className="chatgpt-history-clear-btn"
-                  onClick={handleClearAllHistory}
-                >
-                  <Trash2 size={13} />
-                  <span>Clear all saved history</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </>
-      )}
     </div>
   );
 }
