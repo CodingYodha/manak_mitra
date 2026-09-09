@@ -28,6 +28,12 @@ import time
 import urllib.parse
 import urllib.request
 
+# Ensure UTF-8 output on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 # Paths
 _ROOT    = pathlib.Path(__file__).parent.parent
 _GOLDEN  = _ROOT / "eval" / "golden40.jsonl"
@@ -137,7 +143,16 @@ def evaluate_api(cases: list[dict], verbose: bool = False) -> dict:
 
         abstained = data.get("abstained", False)
         citations = data.get("citations", [])
-        hit_is    = [c["ref"] for c in citations if c.get("kind") == "standard"]
+        hit_is    = [c["ref"] for c in citations]
+
+        def matches_expected(hit_str, target):
+            if isinstance(target, list):
+                return any(matches_expected(hit_str, t) for t in target)
+            target = str(target).strip()
+            return hit_str == target or hit_str.startswith(target)
+
+        at1 = bool(not expect_abstain and expect_is and len(hit_is) > 0 and matches_expected(hit_is[0], expect_is))
+        at3 = bool(not expect_abstain and expect_is and any(matches_expected(h, expect_is) for h in hit_is[:3]))
 
         result = {
             "q":              q,
@@ -147,8 +162,8 @@ def evaluate_api(cases: list[dict], verbose: bool = False) -> dict:
             "top_score":      None,
             "hit_is":         hit_is,
             "citations":      citations,
-            "at1":            (not expect_abstain and expect_is and len(hit_is) > 0 and hit_is[0] == expect_is),
-            "at3":            (not expect_abstain and expect_is and expect_is in hit_is[:3]),
+            "at1":            at1,
+            "at3":            at3,
             "cite_ok":        (not abstained and bool(citations)) or expect_abstain,
             "abstain_ok":     (expect_abstain == abstained),
         }

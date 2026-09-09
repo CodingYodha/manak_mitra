@@ -1,133 +1,177 @@
+"""
+Manak Mitra — Database & Structured Store
+Owner: Rudra
+
+SQLite data access layer for:
+- Quality Control Orders (QCO)
+- Mandatory Certified Products & HSN codes
+- Recognized Testing Laboratories & Lab-Standard Scopes
+- Standards catalog & metadata
+- Query audit logs & telemetry
+"""
 import sqlite3
 import json
 import pathlib
 import datetime
+from typing import List, Dict, Any, Optional
 
 DB = pathlib.Path(__file__).parent.parent / "manak.db"
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS qco (
-  qco_id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  ministry TEXT,
-  gazette_url TEXT NOT NULL,
-  notified_on TEXT,
-  retrieved_on TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS qco_items (
-  id INTEGER PRIMARY KEY,
-  qco_id TEXT REFERENCES qco,
-  product_desc TEXT NOT NULL,
-  hsn_codes TEXT,
-  is_number TEXT,
-  scheme TEXT,
-  effective_on TEXT,
-  confidence REAL
-);
-CREATE TABLE IF NOT EXISTS standards (
-  is_number TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  ics_code TEXT,
-  status TEXT,
-  year INTEGER,
-  is_free INTEGER,
-  purchase_url TEXT
-);
-CREATE TABLE IF NOT EXISTS labs (
-  lab_id TEXT PRIMARY KEY,
-  name TEXT,
-  city TEXT,
-  state TEXT,
-  lat REAL,
-  lon REAL,
-  categories TEXT
-);
-CREATE TABLE IF NOT EXISTS query_log (
-  id INTEGER PRIMARY KEY,
-  ts TEXT,
-  channel TEXT,
-  language TEXT,
-  intent TEXT,
-  matched_is TEXT,
-  top_score REAL,
-  abstained INTEGER
-);
-"""
 
-def conn():
+def conn() -> sqlite3.Connection:
     c = sqlite3.connect(DB)
     c.row_factory = sqlite3.Row
     return c
 
+
 def init():
+    """Initializes the database schema and seeds from curated CSV files if empty."""
+    try:
+        from api import ingest
+    except ImportError:
+        import ingest
     with conn() as c:
-        c.executescript(SCHEMA)
-        
-        # Check if qco is empty to seed
-        count = c.execute("SELECT count(*) FROM qco").fetchone()[0]
-        if count == 0:
-            today = datetime.date.today().isoformat()
-            # 1. LED Bulb
-            c.execute("INSERT INTO qco VALUES (?,?,?,?,?,?)",
-                      ("qco-led", "Electronics and IT Goods (Requirement for Compulsory Registration)", "MeitY", "https://egazette.gov.in/led", "2021-10-01", today))
-            c.execute("INSERT INTO qco_items (qco_id, product_desc, hsn_codes, is_number, scheme, effective_on, confidence) VALUES (?,?,?,?,?,?,?)",
-                      ("qco-led", "Self-ballasted LED lamps for general lighting services", "8539", "IS 16102 (Part 1)", "CRS", "2021-10-01", 1.0))
-            
-            # 2. Gold Ring
-            c.execute("INSERT INTO qco VALUES (?,?,?,?,?,?)",
-                      ("qco-gold", "Hallmarking of Gold Jewellery and Gold Artefacts Order", "DoCA", "https://egazette.gov.in/gold", "2021-06-23", today))
-            c.execute("INSERT INTO qco_items (qco_id, product_desc, hsn_codes, is_number, scheme, effective_on, confidence) VALUES (?,?,?,?,?,?,?)",
-                      ("qco-gold", "Gold Jewellery / Artefacts / Gold Ring", "7113", "IS 1417", "HALLMARKING", "2021-06-23", 1.0))
+        ingest.init_schema(c)
 
-            # 3. Plastic Toy
-            c.execute("INSERT INTO qco VALUES (?,?,?,?,?,?)",
-                      ("qco-toys", "Toys (Quality Control) Order", "DPIIT", "https://egazette.gov.in/toys", "2020-02-25", today))
-            c.execute("INSERT INTO qco_items (qco_id, product_desc, hsn_codes, is_number, scheme, effective_on, confidence) VALUES (?,?,?,?,?,?,?)",
-                      ("qco-toys", "Toys - Safety of toys (mechanical, physical, plastic)", "9503", "IS 9873 (Part 1)", "ISI", "2020-09-01", 1.0))
+        # Check if database has been populated
+        qco_count = c.execute("SELECT count(*) FROM qco").fetchone()[0]
+        prod_count = c.execute("SELECT count(*) FROM qco_items").fetchone()[0]
+        lab_count = c.execute("SELECT count(*) FROM labs").fetchone()[0]
 
-        # Check if labs is empty to seed
-        count = c.execute("SELECT count(*) FROM labs").fetchone()[0]
-        if count == 0:
-            c.executemany("INSERT INTO labs VALUES (?,?,?,?,?,?,?)", [
-                ("lab-del-1", "National Test House (NR)", "New Delhi", "Delhi", 28.6139, 77.2090, "electronics,toys"),
-                ("lab-mum-1", "BIS Western Regional Lab", "Mumbai", "Maharashtra", 19.0760, 72.8777, "gold,electronics"),
-                ("lab-blr-1", "CPRI Bangalore", "Bangalore", "Karnataka", 12.9716, 77.5946, "electronics"),
-            ])
+        if qco_count == 0 or prod_count <= 3 or lab_count <= 3:
+            # Run full automated ingestion
+            ingest.ingest_all(DB)
 
-def mandate_for(term: str):
-    """Product name or HSN code -> the QCO rows that cover it."""
-    q = f"%{term.lower()}%"
+
+def mandate_for(term: str) -> List[Dict[str, Any]]:
+    """
+    Given a product name, IS number, or HSN code, returns all QCO rows that cover it.
+    Uses multi-column match with ranking by confidence.
+    """
+    if not term or not term.strip():
+        return []
+
+    term_clean = term.strip()
+    term_pattern = f"%{term_clean.lower()}%"
+
     with conn() as c:
-        return [dict(r) for r in c.execute("""
-            SELECT i.*, q.title AS qco_title, q.gazette_url, q.retrieved_on
-            FROM qco_items i JOIN qco q ON q.qco_id = i.qco_id
-            WHERE lower(i.product_desc) LIKE ? OR i.hsn_codes LIKE ? OR lower(i.is_number) LIKE ?
-            ORDER BY i.confidence DESC
-        """, (q, q, q))]
+        # Search by exact or partial IS number, product description, category, or QCO title
+        rows = c.execute("""
+            SELECT i.id, i.qco_id, i.product_desc, i.category, i.hsn_codes, i.is_number,
+                   i.scheme, i.effective_on, i.confidence,
+                   COALESCE(i.notification_url, q.gazette_url) AS gazette_url,
+                   q.title AS qco_title, q.ministry, q.retrieved_on, q.source_url
+            FROM qco_items i
+            LEFT JOIN qco q ON q.qco_id = i.qco_id
+            WHERE lower(i.product_desc) LIKE ?
+               OR lower(i.is_number) LIKE ?
+               OR (i.hsn_codes IS NOT NULL AND i.hsn_codes LIKE ?)
+               OR (i.category IS NOT NULL AND lower(i.category) LIKE ?)
+               OR (q.title IS NOT NULL AND lower(q.title) LIKE ?)
+            ORDER BY
+                CASE
+                    WHEN lower(i.is_number) = lower(?) THEN 1
+                    WHEN lower(i.product_desc) LIKE ? THEN 2
+                    ELSE 3
+                END,
+                i.confidence DESC
+            LIMIT 5
+        """, (term_pattern, term_pattern, term_pattern, term_pattern, term_pattern,
+              term_clean, f"{term_clean.lower()}%")).fetchall()
+
+        return [dict(r) for r in rows]
+
+
+def get_labs_for_standard(is_number: str, city: str = "", limit: int = 5) -> List[Dict[str, Any]]:
+    """
+    Finds BIS-recognized labs that specifically test a given Indian Standard (IS number).
+    """
+    if not is_number:
+        return []
+
+    is_clean = is_number.strip()
+    is_pattern = f"%{is_clean.lower()}%"
+    city_pattern = f"%{city.strip().lower()}%" if city else "%"
+
+    with conn() as c:
+        # First query the verified lab-standard scope table
+        rows = c.execute("""
+            SELECT lab_name AS name, city, state, is_number, product_name, category,
+                   lab_code, source_url, mapping_status
+            FROM lab_standards
+            WHERE lower(is_number) LIKE ?
+              AND lower(city) LIKE ?
+            LIMIT ?
+        """, (is_pattern, city_pattern, limit)).fetchall()
+
+        if rows:
+            return [dict(r) for r in rows]
+
+        # If no direct standard scope match, fallback to category search on main labs table
+        category_guess = "electronics" if "16102" in is_clean or "electronics" in is_clean.lower() else (
+            "toys" if "9873" in is_clean or "toy" in is_clean.lower() else (
+                "gold" if "1417" in is_clean or "gold" in is_clean.lower() else "general"
+            )
+        )
+        return get_nearest_labs(city=city, category=category_guess, limit=limit)
+
+
+def get_nearest_labs(city: str = "", category: str = "", limit: int = 5) -> List[Dict[str, Any]]:
+    """
+    Queries nearest accredited BIS labs filtered by city and category.
+    """
+    city_q = f"%{city.strip().lower()}%" if city else "%"
+    cat_q = f"%{category.strip().lower()}%" if category else "%"
+
+    with conn() as c:
+        rows = c.execute("""
+            SELECT lab_id, name, city, state, lat, lon, categories
+            FROM labs
+            WHERE lower(city) LIKE ? AND lower(categories) LIKE ?
+            LIMIT ?
+        """, (city_q, cat_q, limit)).fetchall()
+
+        return [dict(r) for r in rows]
+
+
+def get_all_standards(limit: int = 300) -> List[Dict[str, Any]]:
+    """Returns standards from database (capped for visualization)."""
+    with conn() as c:
+        rows = c.execute("SELECT * FROM standards LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_standard_by_number(is_number: str) -> Optional[Dict[str, Any]]:
+    """Retrieves a single standard record by IS number."""
+    with conn() as c:
+        row = c.execute("SELECT * FROM standards WHERE lower(is_number) = lower(?)", (is_number.strip(),)).fetchone()
+        return dict(row) if row else None
+
 
 def log(**kw):
+    """Logs query telemetry for evaluation and monitoring."""
     with conn() as c:
         c.execute("""
             INSERT INTO query_log (ts, channel, language, intent, matched_is, top_score, abstained)
             VALUES (:ts, :channel, :language, :intent, :matched_is, :top_score, :abstained)
         """, kw)
 
-def get_stats():
+
+def get_stats() -> Dict[str, Any]:
+    """Returns system operational statistics."""
     with conn() as c:
         total = c.execute("SELECT count(*) FROM query_log").fetchone()[0]
         abstained = c.execute("SELECT count(*) FROM query_log WHERE abstained = 1").fetchone()[0]
-        return {"total_queries": total, "abstained": abstained}
+        qco_items_count = c.execute("SELECT count(*) FROM qco_items").fetchone()[0]
+        labs_count = c.execute("SELECT count(*) FROM labs").fetchone()[0]
+        lab_standards_count = c.execute("SELECT count(*) FROM lab_standards").fetchone()[0]
+        standards_count = c.execute("SELECT count(*) FROM standards").fetchone()[0]
 
-def get_all_standards():
-    with conn() as c:
-        return [dict(r) for r in c.execute("SELECT * FROM standards")]
-
-def get_nearest_labs(city: str, category: str, limit: int = 3):
-    city_q = f"%{city.lower()}%" if city else "%"
-    cat_q = f"%{category.lower()}%" if category else "%"
-    with conn() as c:
-        return [dict(r) for r in c.execute("""
-            SELECT * FROM labs
-            WHERE lower(city) LIKE ? AND lower(categories) LIKE ?
-            LIMIT ?
-        """, (city_q, cat_q, limit))]
+        return {
+            "total_queries": total,
+            "abstained_queries": abstained,
+            "mandatory_products_indexed": qco_items_count,
+            "testing_labs_indexed": labs_count,
+            "lab_scope_mappings": lab_standards_count,
+            "standards_in_db": standards_count
+        }
