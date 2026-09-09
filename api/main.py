@@ -50,12 +50,13 @@ def extract_city(q: str) -> str:
 @app.on_event("startup")
 def on_startup():
     store.init()
-    # Pre-load graph into memory on startup (non-fatal if not built yet)
+    # Keep the API responsive while the large graph is idle.  Graph routes load
+    # the same cached graph on first use; verifier and scheme routes need not
+    # wait for that expensive deserialisation.
     try:
         from api import graph_store
         if graph_store.is_ready():
-            graph_store.get()
-            print("[main] Knowledge graph loaded into memory")
+            print("[main] Knowledge graph will load on its first graph request")
         else:
             print("[main] graph.gpickle not found — run: python api/graph_build.py")
     except Exception as e:
@@ -207,6 +208,11 @@ async def verify_mark_endpoint(
         "reason": "Please provide either a mark code string or an image file to verify.",
         "citations": []
     }
+
+
+@app.get("/api/schemes")
+def get_schemes():
+    return answers.scheme_catalog()
 
 
 # ── Graph endpoints ───────────────────────────────────────────────────────────

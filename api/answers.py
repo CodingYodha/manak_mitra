@@ -157,6 +157,16 @@ def scheme(query_or_name: str) -> Dict[str, Any]:
     }
 
 
+def scheme_catalog() -> Dict[str, Any]:
+    """Expose the curated scheme decision trees without frontend duplication."""
+    path = _ROOT / "data" / "curated" / "schemes.yaml"
+    if not path.exists():
+        return {"schemes": {}, "retrieved": False}
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return {"schemes": data, "retrieved": True}
+
+
 def labs(city: Optional[str] = None, category: Optional[str] = None,
          is_number: Optional[str] = None,
          product: Optional[str] = None) -> Dict[str, Any]:
