@@ -39,3 +39,6 @@ npm-debug.log
 *.pdf
 *.xlsx
 *.pptx
+
+# Personal / Local task checklists
+taskmiya.md

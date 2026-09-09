@@ -1,0 +1,878 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&family=Noto+Sans+Devanagari:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ==========================================================================
+   MANAK MITRA — DESIGN SYSTEM
+   Faithfully inspired by Airtable's Quietly Editorial Marketing & Product Design
+   (from design.md)
+   ========================================================================== */
+
+:root {
+  /* Typography */
+  --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-hindi: 'Noto Sans Devanagari', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Colors — Brand & Primary */
+  --color-primary: #181d26;          /* The dominant near-black ink */
+  --color-primary-active: #0d1218;   /* Pressed primary button state */
+
+  /* Colors — Surface Floor */
+  --color-canvas: #ffffff;           /* Pure white canvas */
+  --color-surface-soft: #f8fafc;     /* Soft slate white */
+  --color-surface-strong: #e0e2e6;   /* Light gray CTA banner */
+  --color-surface-dark: #181d26;     /* Dark navy / ink surface */
+  --color-surface-dark-elevated: #1d1f25;
+  --color-hairline: #dddddd;         /* 1px outline */
+  --color-hairline-light: #ececec;
+
+  /* Colors — Typography */
+  --color-ink: #181d26;              /* h1/h2 and high emphasis */
+  --color-body: #333840;             /* Running text */
+  --color-muted: #64748b;            /* Meta, captions, breadcrumbs */
+  --color-on-dark: #ffffff;          /* White text on dark cards */
+  --color-on-primary: #ffffff;
+
+  /* Colors — Signature Brand Voltage Surfaces (from design.md) */
+  --color-signature-coral: #aa2d00;  /* Dark oxide coral */
+  --color-signature-forest: #0a2e0e; /* Deep dark forest green */
+  --color-signature-cream: #f5e9d4;  /* Warm editorial beige */
+  --color-signature-peach: #fcab79;  /* Pastel peach demo card */
+  --color-signature-mint: #a8d8c4;   /* Pastel mint demo card */
+  --color-signature-yellow: #f4d35e; /* Pastel yellow demo card */
+  --color-signature-mustard: #d9a441;
+
+  /* Colors — Semantic */
+  --color-link: #1b61c9;             /* Body links */
+  --color-link-active: #1a3866;
+  --color-info-border: #458fff;
+  --color-success: #006400;
+  --color-success-border: #39bf45;
+  --color-refusal-red: #d93838;
+
+  /* Shapes & Radii */
+  --radius-xs: 2px;
+  --radius-sm: 6px;                  /* Inputs, small badges */
+  --radius-md: 10px;                 /* Content cards, demo grid */
+  --radius-lg: 12px;                 /* Primary CTAs, signature surface cards */
+  --radius-pill: 9999px;             /* Pricing / Scheme buttons */
+  --radius-full: 50%;
+
+  /* Spacing */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-xxl: 48px;
+  --space-section: 96px;             /* Universal vertical rhythm band */
+
+  /* Shadows (minimal - color-block first, shadow second) */
+  --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+  --shadow-hover: 0 10px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* Global Reset */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-canvas);
+  color: var(--color-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Typography Hierarchy (as specified in design.md: weights 400 & 500) */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-weight: 400; /* Editorial style: display is never overly bold */
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.display-lg {
+  font-size: 40px;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
+.display-md {
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.title-lg {
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.title-md {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.title-sm {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.body-md {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-body);
+}
+
+.caption {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+/* Layout Utilities */
+.container {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 var(--space-lg);
+}
+
+.section-rhythm {
+  padding-top: var(--space-section);
+  padding-bottom: var(--space-section);
+}
+
+/* Buttons (Airtable Signature Button Pair) */
+.btn-primary {
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+  padding: 14px 22px;
+  border-radius: var(--radius-lg);
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-primary:active {
+  background-color: var(--color-primary-active);
+}
+
+.btn-secondary {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+  padding: 14px 22px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-hairline);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-secondary:active {
+  background-color: var(--color-surface-soft);
+  border-color: #bbbbbb;
+}
+
+/* Secondary Button over Dark/Signature Surfaces */
+.btn-secondary-on-dark {
+  background-color: #ffffff;
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+  padding: 14px 22px;
+  border-radius: var(--radius-lg);
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.btn-secondary-on-dark:active {
+  background-color: #f1f5f9;
+}
+
+/* Pricing Pill Button */
+.btn-pill {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 20px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-pill:active {
+  background-color: var(--color-surface-soft);
+}
+
+/* Icon Button Circular */
+.btn-icon-circular {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  color: var(--color-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-icon-circular:active {
+  background: var(--color-surface-soft);
+}
+
+/* Header (Top Nav - 64px tall white bar) */
+.airtable-nav {
+  height: 64px;
+  background-color: var(--color-canvas);
+  border-bottom: 1px solid var(--color-hairline);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.nav-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--color-ink);
+}
+
+.nav-logo-mark {
+  width: 28px;
+  height: 28px;
+  background: var(--color-primary);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.nav-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.nav-title span.hindi {
+  font-family: var(--font-hindi);
+  font-weight: 500;
+  color: #71717a;
+  margin-left: 4px;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  list-style: none;
+}
+
+.nav-link-item {
+  color: var(--color-body);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 0;
+  position: relative;
+}
+
+.nav-link-item:hover, .nav-link-item.active {
+  color: var(--color-ink);
+}
+
+.nav-link-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: var(--color-ink);
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Hero Section (White canvas, pure whitespace, no mesh) */
+.hero-editorial {
+  padding: 80px 0 60px 0;
+  text-align: left;
+}
+
+.hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-hairline);
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-bottom: 24px;
+}
+
+.hero-tag span.badge-num {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.hero-headline {
+  max-width: 820px;
+  margin-bottom: 20px;
+}
+
+.hero-subhead {
+  font-size: 18px;
+  color: var(--color-muted);
+  max-width: 680px;
+  line-height: 1.6;
+  margin-bottom: 32px;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Monochrome Partner Strip */
+.partner-strip {
+  padding: 32px 0 48px 0;
+  border-bottom: 1px solid var(--color-hairline-light);
+}
+
+.partner-strip-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-muted);
+  margin-bottom: 16px;
+}
+
+.partner-logos {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.partner-badge {
+  font-size: 13px;
+  font-weight: 500;
+  color: #52525b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* SIGNATURE CARDS (Brand Voltage moments from design.md) */
+
+/* 1. Signature Coral Card */
+.signature-card-coral {
+  background-color: var(--color-signature-coral);
+  color: var(--color-on-dark);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xxl);
+  margin: var(--space-section) 0;
+}
+
+.signature-card-coral h2 {
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+
+.signature-card-coral p {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 680px;
+  margin-bottom: 28px;
+}
+
+/* 2. Signature Forest Card */
+.signature-card-forest {
+  background-color: var(--color-signature-forest);
+  color: var(--color-on-dark);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xxl);
+  margin: var(--space-section) 0;
+}
+
+.signature-card-forest h2 {
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+
+.signature-card-forest p {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 680px;
+  margin-bottom: 28px;
+}
+
+/* 3. Surface Dark Card (The path to 10x compliance) */
+.signature-card-dark {
+  background-color: var(--color-surface-dark);
+  color: var(--color-on-dark);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xxl);
+  margin: var(--space-section) 0;
+}
+
+.signature-card-dark h2 {
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+
+.signature-card-dark p {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 680px;
+  margin-bottom: 28px;
+}
+
+/* 4. Cream Callout Band */
+.callout-band-cream {
+  background-color: var(--color-signature-cream);
+  color: var(--color-ink);
+  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  margin: var(--space-section) 0;
+}
+
+.callout-band-cream h2, .callout-band-cream h3 {
+  color: var(--color-ink);
+}
+
+/* Multi-Card Demo Grids (Pastel Surfaces) */
+.demo-grid-section {
+  margin: var(--space-section) 0;
+}
+
+.demo-grid-header {
+  margin-bottom: 32px;
+}
+
+.demo-cards-3up {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-lg);
+}
+
+.demo-card {
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.demo-card.surface-peach {
+  background-color: var(--color-signature-peach);
+  color: #331500;
+}
+.demo-card.surface-peach h3 {
+  color: #2b1100;
+}
+
+.demo-card.surface-mint {
+  background-color: var(--color-signature-mint);
+  color: #062b1b;
+}
+.demo-card.surface-mint h3 {
+  color: #042416;
+}
+
+.demo-card.surface-cream {
+  background-color: var(--color-signature-cream);
+  color: #261c0e;
+}
+.demo-card.surface-cream h3 {
+  color: #211709;
+}
+
+/* Tabbed Feature Card */
+.feature-card-tabbed {
+  background-color: var(--color-surface-soft);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  margin: var(--space-section) 0;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: var(--space-xl);
+}
+
+@media (max-width: 900px) {
+  .feature-card-tabbed {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tabbed-left-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid var(--color-hairline);
+  padding-right: var(--space-lg);
+}
+
+.tab-nav-btn {
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab-nav-btn.active {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-subtle);
+  border: 1px solid var(--color-hairline);
+}
+
+/* Chat Assistant Panel (Editorial Box) */
+.editorial-chat-box {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.chat-box-topbar {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface-soft);
+}
+
+.chat-box-messages {
+  padding: 24px;
+  min-height: 380px;
+  max-height: 540px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--color-canvas);
+}
+
+.chat-msg-row {
+  display: flex;
+  gap: 12px;
+  max-width: 82%;
+}
+
+.chat-msg-row.user {
+  margin-left: auto;
+  flex-direction: row-reverse;
+}
+
+.chat-bubble {
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.chat-msg-row.bot .chat-bubble {
+  background-color: var(--color-surface-soft);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+}
+
+.chat-msg-row.user .chat-bubble {
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+/* Citation Chips (Clean editorial pills) */
+.chips-container {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-citation {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  border: 1px solid var(--color-hairline);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.chip-citation.qco {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.chip-citation.standard {
+  border-color: #86efac;
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+/* Refusal Card (Zero-Hallucination Safe Fallback) */
+.refusal-alert-card {
+  margin-top: 10px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  color: #9f1239;
+}
+
+.refusal-alert-title {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.refusal-helpline {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #be123c;
+}
+
+/* Chat Input Bar */
+.chat-input-area {
+  padding: 16px 24px;
+  background: var(--color-surface-soft);
+  border-top: 1px solid var(--color-hairline);
+}
+
+.quick-prompts-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+}
+
+.quick-prompt-pill {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  color: var(--color-body);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.quick-prompt-pill:hover {
+  border-color: #a1a1aa;
+  color: var(--color-ink);
+}
+
+.input-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+}
+
+.input-row-controls:focus-within {
+  border-color: var(--color-info-border);
+}
+
+.editorial-input {
+  flex: 1;
+  border: none;
+  background: none;
+  font-size: 14.5px;
+  padding: 8px;
+  color: var(--color-ink);
+}
+
+.mic-toggle-btn {
+  background: none;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.mic-toggle-btn.listening {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+/* Light Gray CTA Banner near Footer (from design.md: cta-band-light) */
+.cta-band-light {
+  background-color: var(--color-surface-strong);
+  color: var(--color-ink);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xxl);
+  margin: var(--space-section) 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.cta-band-light h2 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+/* Footer (Light surface, 6-column clean editorial list) */
+.editorial-footer {
+  background-color: var(--color-canvas);
+  border-top: 1px solid var(--color-hairline);
+  padding: 64px 0 40px 0;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 48px;
+  margin-bottom: 48px;
+}
+
+@media (max-width: 768px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}
+
+.footer-col h4 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-ink);
+  margin-bottom: 16px;
+}
+
+.footer-links {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footer-links a {
+  color: var(--color-muted);
+  text-decoration: none;
+  font-size: 13.5px;
+}
+
+.footer-links a:hover {
+  color: var(--color-ink);
+}
+
+.footer-bottom {
+  border-top: 1px solid var(--color-hairline-light);
+  padding-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--color-muted);
+  flex-wrap: wrap;
+  gap: 16px;
+}
