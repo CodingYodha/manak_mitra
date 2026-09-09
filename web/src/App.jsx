@@ -25,6 +25,23 @@ import {
 export default function App() {
   const [activeTab, setActiveTab] = useState('assistant');
   const [focusedStandard, setFocusedStandard] = useState(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('manak_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('manak_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   const handleSelectStandard = (isNumber) => {
     setFocusedStandard(isNumber);
@@ -40,12 +57,14 @@ export default function App() {
   };
 
   return (
-    <div className="airtable-site app-layout-with-sidebar">
-      {/* 1. PERSISTENT FIXED SIDEBAR (Visible throughout scroll & responsive) */}
+    <div className={`airtable-site app-layout-with-sidebar ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      {/* 1. PERSISTENT FIXED SIDEBAR (Collapsible, responsive, zero-auth) */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenPassport={handleOpenPassport}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={handleToggleSidebar}
       />
 
       {/* 2. MAIN SCROLLABLE CONTENT AREA */}
