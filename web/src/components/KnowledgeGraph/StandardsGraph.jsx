@@ -23,6 +23,15 @@ const NODE_COLORS = {
   highlight: '#ffffff'
 };
 
+const LINK_COLORS = {
+  tests: '#38bdf8',
+  requires: '#fbbf24',
+  governed_by: '#fb7185',
+  classified_as: '#c084fc',
+  parent_of: '#a78bfa',
+  under: '#2dd4bf'
+};
+
 const FOCUS_NEIGHBOR_LIMIT = 60;
 
 const getLinkId = (link) => {
@@ -456,6 +465,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.lab }}></span> Lab</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.ics }}></span> ICS Sector</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.qco }}></span> QCO Order</span>
+            <span style={{ color: '#cbd5e1' }}>Links: cyan test · gold requirement · pink QCO</span>
           </div>
 
           {/* 3D Navigation Hint */}
@@ -478,27 +488,31 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                 }
                 return NODE_COLORS[n.type] || '#94a3b8';
               }}
-              nodeRelSize={2.0}
+              nodeRelSize={2.5}
               nodeVal={(n) => {
                 const isSelected = selectedNode && selectedNode.id === n.id;
                 if (isSelected) return 12;
                 if (highlightNodeIds.has(n.id)) return 7;
-                return n.type === 'ics' ? 3.5 : n.type === 'standard' ? 1.1 : 1.3;
+                return n.type === 'ics' ? 4 : n.type === 'standard' ? 1.5 : 1.8;
               }}
               nodeResolution={8}
+              linkResolution={2}
               linkColor={(l) => {
                 const lId = getLinkId(l);
                 if (highlightLinkIds.has(lId)) return '#60a5fa'; // Bright glowing blue
-                if (highlightLinkIds.size > 0) return 'rgba(30, 41, 59, 0.08)';
-                return 'rgba(71, 85, 105, 0.4)';
+                if (highlightLinkIds.size > 0) return '#334155';
+                return LINK_COLORS[l.rel] || '#94a3b8';
               }}
-              linkWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 2.5 : 0.25)}
-              linkOpacity={0.28}
+              linkWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 3 : 0.65)}
+              linkOpacity={0.78}
               linkDirectionalParticles={(l) => (highlightLinkIds.has(getLinkId(l)) ? 3 : 0)}
               linkDirectionalParticleSpeed={0.007}
               linkDirectionalParticleWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 2.5 : 0)}
               linkCurvature={0}
               onNodeClick={selectNode}
+              onNodeHover={(node) => {
+                if (containerRef.current) containerRef.current.style.cursor = node ? 'pointer' : 'grab';
+              }}
               onLinkClick={selectLink}
               backgroundColor="#070b14"
               showNavInfo={false}
