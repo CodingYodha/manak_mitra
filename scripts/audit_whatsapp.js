@@ -1,7 +1,7 @@
 /**
  * Comprehensive Automated Audit & Test Suite for Manak Mitra WhatsApp Channel
  */
-const { classifyAndReplyCasual, SYSTEM_PROMPT } = require('../whatsapp.js');
+const { classifyAndReplyCasual, formatForWhatsApp, SYSTEM_PROMPT } = require('../whatsapp.js');
 
 async function runAudit() {
   console.log('===============================================================');
@@ -83,37 +83,53 @@ async function runAudit() {
   assert('Discards empty messages', !shouldProcessMessage({ key: { fromMe: false, remoteJid: '919876543210@s.whatsapp.net' }, message: {} }));
   assert('Accepts valid 1-on-1 private direct chat', shouldProcessMessage({ key: { fromMe: false, remoteJid: '919876543210@s.whatsapp.net' }, message: { conversation: 'Need BIS standard for helmets' } }));
 
-  // ── TEST SUITE 3: Outbound WhatsApp Formatting ───────────────────────
+  // ── TEST SUITE 3: WhatsApp Typography & Formatting ───────────────────────
   console.log('\n── Test Suite 3: WhatsApp Typography & Formatting ──');
 
-  function formatWhatsAppReply(data) {
-    let reply = data.answer || "No response received from standards engine.";
-    // Convert **bold** to *bold*
-    reply = reply.replace(/\*\*(.*?)\*\*/g, "*$1*");
+  // Test 3.1: Standard Markdown bold to WhatsApp single asterisk bold
+  const boldTest = "This is **mandatory** under **BIS Act 2016**.";
+  const boldResult = formatForWhatsApp(boldTest);
+  assert('Replaces **bold** with *bold*', !boldResult.includes('**') && boldResult === "This is *mandatory* under *BIS Act 2016*.");
 
-    // Format citations capped to top 2
-    if (data.citations && data.citations.length > 0) {
-      reply += "\n\n📚 *Official Citations:*";
-      data.citations.slice(0, 2).forEach((c) => {
-        if (c.kind === "standard") {
-          reply += `\n• Standard: ${c.ref} (${c.status || "ACTIVE"})`;
-        } else if (c.kind === "qco") {
-          reply += `\n• Gazette QCO: ${c.ref}`;
-        } else {
-          reply += `\n• Ref: ${c.ref}`;
-        }
-      });
-    }
+  // Test 3.2: Markdown headers conversion
+  const headerTest = "### Compulsory Registration Scheme\nAll products must comply.";
+  const headerResult = formatForWhatsApp(headerTest);
+  assert('Converts markdown headers ### to *Header*', headerResult.startsWith('*Compulsory Registration Scheme*'));
 
-    if (data.abstained) {
-      reply += "\n\n⚠️ *Need further guidance?* Call the BIS National Helpline: *1800-11-4000*";
-    }
+  // Test 3.3: Bullet points (*, -, +) converted to unicode bullet (• )
+  // CRITICAL: prevents WhatsApp from parsing leading '* ' as an unclosed bold tag!
+  const bulletTest = "* Item 1\n- Item 2\n+ Item 3";
+  const bulletResult = formatForWhatsApp(bulletTest);
+  assert('Converts markdown bullets to unicode • bullets', bulletResult === "• Item 1\n• Item 2\n• Item 3");
 
-    return reply;
-  }
+  // Test 3.4: Hyperlinks [Title](url) converted to readable Title (url)
+  const linkTest = "Visit [BIS Portal](https://bis.gov.in) to verify.";
+  const linkResult = formatForWhatsApp(linkTest);
+  assert('Converts markdown links to Text (URL)', linkResult.includes("BIS Portal (https://bis.gov.in)"));
 
+  // Test 3.5: Identical URL label [url](url) simplified
+  const selfLinkTest = "Portal: [https://bis.gov.in](https://bis.gov.in)";
+  const selfLinkResult = formatForWhatsApp(selfLinkTest);
+  assert('Simplifies identical URL and label links', selfLinkResult === "Portal: https://bis.gov.in");
+
+  // Test 3.6: Markdown tables converted to clean bullet pairs
+  const tableTest = "| Product | Standard |\n| --- | --- |\n| LED Bulb | IS 16102 |\n| Helmet | IS 4151 |";
+  const tableResult = formatForWhatsApp(tableTest);
+  assert('Converts markdown tables to clean key-value bullets', tableResult.includes("• *LED Bulb*: IS 16102") && tableResult.includes("• *Helmet*: IS 4151"));
+
+  // Test 3.7: Hindi unicode text with bold markers
+  const hindiTest = "**अनिवार्य QCOs**: जांचें कि क्या आपके उत्पाद पर **सरकारी गुणवत्ता आदेश** लागू है।";
+  const hindiResult = formatForWhatsApp(hindiTest);
+  assert('Formats Hindi text bolding cleanly without corrupting unicode', !hindiResult.includes('**') && hindiResult.includes('*अनिवार्य QCOs*:'));
+
+  // Test 3.8: Stray unclosed asterisks or spacing cleanup
+  const spaceAsteriskTest = "Standard: ** IS 16102 ** and **QCO 2024**";
+  const spaceAsteriskResult = formatForWhatsApp(spaceAsteriskTest);
+  assert('Cleans inner spaces for WhatsApp bold syntax (*word*)', !spaceAsteriskResult.includes('**') && spaceAsteriskResult.includes('*IS 16102*'));
+
+  // Test 3.9: End-to-end RAG response formatting with citations
   const sampleAnswer = {
-    answer: "Under the **Electronics and IT Goods Order**, 9W LED lamps require **mandatory** registration under standard **IS 16102 (Part 1)**.",
+    answer: "Under the **Electronics and IT Goods Order**, 9W LED lamps require **mandatory** registration under standard **IS 16102 (Part 1)**.\n\n### Key Requirements\n* **Scheme**: CRS\n* **Testing**: Accredited Lab",
     citations: [
       { kind: "standard", ref: "IS 16102 (Part 1)", status: "ACTIVE" },
       { kind: "qco", ref: "Electronics and IT Goods Order" },
@@ -122,19 +138,39 @@ async function runAudit() {
     abstained: false
   };
 
-  const formatted = formatWhatsAppReply(sampleAnswer);
-  assert('Replaces standard markdown **bold** with WhatsApp *bold*', !formatted.includes('**') && formatted.includes('*Electronics and IT Goods Order*'));
-  assert('Limits citations to top 2 for concise mobile messaging', formatted.split('•').length - 1 === 2);
-  assert('Includes official citations header', formatted.includes('📚 *Official Citations:*'));
+  let endToEndReply = sampleAnswer.answer;
+  if (sampleAnswer.citations && sampleAnswer.citations.length > 0) {
+    endToEndReply += "\n\n📚 *Official Citations:*";
+    sampleAnswer.citations.slice(0, 2).forEach((c) => {
+      if (c.kind === "standard") {
+        endToEndReply += `\n• Standard: ${c.ref} (${c.status || "ACTIVE"})`;
+      } else if (c.kind === "qco") {
+        endToEndReply += `\n• Gazette QCO: ${c.ref}`;
+      } else {
+        endToEndReply += `\n• Ref: ${c.ref}`;
+      }
+    });
+  }
 
+  const endToEndFormatted = formatForWhatsApp(endToEndReply);
+  assert('End-to-end RAG reply contains 0 double asterisks', !endToEndFormatted.includes('**'));
+  assert('End-to-end RAG reply contains WhatsApp bold *mandatory*', endToEndFormatted.includes('*mandatory*'));
+  assert('End-to-end RAG reply contains converted header *Key Requirements*', endToEndFormatted.includes('*Key Requirements*'));
+  assert('End-to-end RAG reply limits citations to top 2', endToEndFormatted.split('•').length - 1 === 4); // 2 bullet items + 2 citations = 4
+  assert('End-to-end RAG reply contains official citations header', endToEndFormatted.includes('📚 *Official Citations:*'));
+
+  // Test 3.10: Abstention Helpline
   const abstainedAnswer = {
-    answer: "I cannot answer this question from authenticated official gazettes.",
+    answer: "I cannot verify this product standard in official gazettes.",
     citations: [],
     abstained: true
   };
-
-  const abstainedFormatted = formatWhatsAppReply(abstainedAnswer);
-  assert('Appends BIS helpline when query is abstained', abstainedFormatted.includes('1800-11-4000'));
+  let abstainedReply = abstainedAnswer.answer;
+  if (abstainedAnswer.abstained) {
+    abstainedReply += "\n\n⚠️ *Need further guidance?* Call the BIS National Helpline: *1800-11-4000*";
+  }
+  const abstainedFormatted = formatForWhatsApp(abstainedReply);
+  assert('Appends formatted BIS helpline when query is abstained', abstainedFormatted.includes('1800-11-4000') && !abstainedFormatted.includes('**'));
 
   // ── SUMMARY ─────────────────────────────────────────────────────────
   console.log('\n===============================================================');

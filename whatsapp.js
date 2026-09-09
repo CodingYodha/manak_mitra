@@ -183,6 +183,84 @@ async function classifyAndReplyCasual(query) {
   return null; // Route to RAG backend for standards retrieval
 }
 
+/**
+ * Format markdown response for native WhatsApp rendering.
+ * - Converts markdown bold (**text**) to WhatsApp bold (*text*)
+ * - Converts headers (# Header) to bold section titles (*Header*)
+ * - Replaces markdown bullets (*, -, +) with clean unicode bullets (• ) to prevent breaking WhatsApp's bold parser
+ * - Converts markdown links [Title](url) to Title (url)
+ * - Converts markdown tables to readable key-value bullets
+ * - Fixes spaces inside bold markers (* word * -> *word*)
+ * - Removes unclosed or stray asterisks
+ */
+function formatForWhatsApp(text) {
+  if (!text || typeof text !== "string") return "";
+  let formatted = text;
+
+  // 1. Normalize line endings
+  formatted = formatted.replace(/\r\n/g, "\n");
+
+  // 2. Format markdown tables to clean bullet lists
+  const lines = formatted.split("\n");
+  const tableProcessed = [];
+  let inTable = false;
+  let headers = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith("|") && line.endsWith("|")) {
+      const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+      if (cells.every((c) => /^:?-+:?$/.test(c))) {
+        continue;
+      }
+      if (!inTable) {
+        inTable = true;
+        headers = cells;
+        continue;
+      }
+      if (headers.length === 2 && cells.length === 2) {
+        tableProcessed.push(`• *${cells[0]}*: ${cells[1]}`);
+      } else {
+        tableProcessed.push("• " + cells.map((c, idx) => (headers[idx] ? `*${headers[idx]}*: ${c}` : c)).join(" | "));
+      }
+    } else {
+      inTable = false;
+      headers = [];
+      tableProcessed.push(lines[i]);
+    }
+  }
+  formatted = tableProcessed.join("\n");
+
+  // 3. Convert markdown headers (### Header -> *Header*)
+  formatted = formatted.replace(/^#{1,6}\s+(.+)$/gm, "*$1*");
+
+  // 4. Convert markdown links [Label](url) -> Label (url)
+  formatted = formatted.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, label, url) => {
+    if (label.trim() === url.trim()) return url;
+    return `${label} (${url})`;
+  });
+
+  // 5. Convert markdown bold+italic (***text*** -> _*text*_)
+  formatted = formatted.replace(/\*\*\*([^*]+?)\*\*\*/g, "_*$1*_");
+
+  // 6. Convert markdown list bullets (*, -, + at start of line) -> unicode bullet '• '
+  // Critical for WhatsApp because a line starting with '* ' is parsed as an unclosed bold marker!
+  formatted = formatted.replace(/^(\s*)[*\-+]\s+/gm, "$1• ");
+
+  // 7. Convert markdown bold (**text** or __text__ -> *text*)
+  // Also trim inner spaces inside the asterisks so WhatsApp parses *word* correctly without gaps
+  formatted = formatted.replace(/\*\*\s*([^*]+?)\s*\*\*/g, "*$1*");
+  formatted = formatted.replace(/__\s*([^_]+?)\s*__/g, "*$1*");
+
+  // 8. Clean up any leftover double asterisks
+  formatted = formatted.replace(/\*\*/g, "*");
+
+  // 9. Clean up multiple empty lines
+  formatted = formatted.replace(/\n{3,}/g, "\n\n");
+
+  return formatted.trim();
+}
+
 async function startWhatsAppBot() {
   console.log("[WhatsApp] Initializing session...");
   const { state, saveCreds } = await useMultiFileAuthState("wa-session");
@@ -250,12 +328,21 @@ async function startWhatsAppBot() {
 
       console.log(`[WhatsApp] Incoming 1-on-1 message from ${remoteJid}: "${query}"`);
 
+      // 💬 Native WhatsApp Presence: Show "typing..." immediately to user
+      try {
+        await sock.sendPresenceUpdate("composing", remoteJid);
+      } catch (_) {
+        // Non-critical presence update error
+      }
+
       try {
         // 🧠 AI Pre-Backend Classification & Conversational Gateway
         const casualReply = await classifyAndReplyCasual(query);
         if (casualReply) {
           console.log(`[WhatsApp] Conversational AI layer handled query directly.`);
-          await sock.sendMessage(remoteJid, { text: casualReply });
+          const formattedCasual = formatForWhatsApp(casualReply);
+          await sock.sendMessage(remoteJid, { text: formattedCasual });
+          try { await sock.sendPresenceUpdate("paused", remoteJid); } catch (_) {}
           continue;
         }
 
@@ -280,9 +367,6 @@ async function startWhatsAppBot() {
         const data = await response.json();
         let reply = data.answer || "No response received from standards engine.";
 
-        // Convert standard markdown **bold** to WhatsApp *bold*
-        reply = reply.replace(/\*\*(.*?)\*\*/g, "*$1*");
-
         // Format citations (capped to top 2 for clean mobile display)
         if (data.citations && data.citations.length > 0) {
           reply += "\n\n📚 *Official Citations:*";
@@ -301,13 +385,18 @@ async function startWhatsAppBot() {
           reply += "\n\n⚠️ *Need further guidance?* Call the BIS National Helpline: *1800-11-4000*";
         }
 
-        await sock.sendMessage(remoteJid, { text: reply });
+        // 💅 Comprehensive WhatsApp Typography Pipeline
+        const formattedReply = formatForWhatsApp(reply);
+
+        await sock.sendMessage(remoteJid, { text: formattedReply });
+        try { await sock.sendPresenceUpdate("paused", remoteJid); } catch (_) {}
         console.log(`[WhatsApp] Sent reply to ${remoteJid}`);
       } catch (err) {
         console.error(`[WhatsApp] Failed to process message: ${err.message}`);
         await sock.sendMessage(remoteJid, {
           text: "🙏 *Manak Mitra Assistant*\n\nUnable to fetch standards right now. Please refer to official sources at https://bis.gov.in or call the BIS Helpline on *1800-11-4000*."
         });
+        try { await sock.sendPresenceUpdate("paused", remoteJid); } catch (_) {}
       }
     }
   });
@@ -320,6 +409,7 @@ if (require.main === module) {
 
 module.exports = {
   classifyAndReplyCasual,
+  formatForWhatsApp,
   SYSTEM_PROMPT,
   startWhatsAppBot
 };
