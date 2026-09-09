@@ -30,6 +30,22 @@ VALID_GOLD_PURITIES = {
     "958": {"karat": "23K", "description": "95.8% Pure Gold (23 Karat)"},
     "999": {"karat": "24K", "description": "99.9% Pure Gold (24 Karat - Bullion/Coin)"},
 }
+VALID_PURITY_MARKS = {
+    f"{details['karat']}{fineness}"
+    for fineness, details in VALID_GOLD_PURITIES.items()
+}
+
+
+def _is_ocr_huid_candidate(value: str) -> bool:
+    """Use stricter rules for noisy OCR than for manually entered HUIDs."""
+    candidate = value.strip().upper()
+    return bool(
+        HUID_REGEX.fullmatch(candidate)
+        and candidate not in VALID_PURITY_MARKS
+        and candidate not in OCR_FALSE_POSITIVES
+        and any(char.isalpha() for char in candidate)
+        and any(char.isdigit() for char in candidate)
+    )
 
 # Lightweight dictionary blocklist to catch OCR hallucinations
 OCR_FALSE_POSITIVES = {
@@ -44,7 +60,7 @@ def detect_mark_type(code: str) -> str:
         return "isi"
     if c.startswith("R-") or (len(c) == 8 and c.isdigit()):
         return "crs"
-    if len(c) == 6 and bool(HUID_REGEX.match(c)):
+    if len(c) == 6 and bool(HUID_REGEX.match(c)) and c not in VALID_PURITY_MARKS:
         return "huid"
     return "unknown"
 
@@ -62,10 +78,11 @@ def check_huid_plausibility(candidate: str, ocr_confidence: float = 100.0, hallm
         "dictionary_word": c in OCR_FALSE_POSITIVES,
         "all_digits": c.isdigit(),
         "all_letters": c.isalpha(),
-        "hallmark_context": hallmark_context
+        "hallmark_context": hallmark_context,
+        "purity_mark": c in VALID_PURITY_MARKS,
     }
     
-    if not HUID_REGEX.match(c):
+    if not HUID_REGEX.match(c) or evidence["purity_mark"]:
         status = "invalid"
         confidence = 0.0
     elif evidence["dictionary_word"]:
@@ -109,7 +126,12 @@ def verify_huid(code: str, purity: Optional[str] = None, ocr_confidence: float =
     purity_info = VALID_GOLD_PURITIES.get(purity.strip()) if purity else None
     purity_str = f" ({purity_info['description']})" if purity_info else ""
 
-    if status == "invalid":
+    if plausibility["evidence"].get("purity_mark"):
+        reason = (
+            f"'{clean_code}' is a gold purity/fineness mark, not a HUID. A complete post-2021 BIS hallmark "
+            "must also show a separate 6-character alphanumeric HUID that can be checked in BIS CARE."
+        )
+    elif status == "invalid":
         reason = (
             "Structural syntax violation: An authentic BIS Hallmark HUID must be exactly 6 alphanumeric "
             "characters (digits 0-9 and capital letters A-Z). Symbols, spaces, or incorrect character counts "
@@ -428,7 +450,7 @@ def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
             conf = tok["conf"]
             original = tok["original"]
 
-            if len(clean) == 6 and HUID_REGEX.match(clean):
+            if _is_ocr_huid_candidate(clean):
                 candidates.append({"text": clean, "original": original, "conf": conf})
             elif len(clean) == 7 and clean.isdigit():
                 candidates.append({"text": clean, "original": original, "conf": conf, "type": "isi"})
@@ -439,34 +461,74 @@ def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
 
         # Also try sliding-window concatenation of adjacent tokens to catch
         # split tokens like "22K" + "916" → "22K916"
-        all_clean = [t["text"] for t in all_tokens if t["text"]]
-        for j in range(len(all_clean) - 1):
-            merged = all_clean[j] + all_clean[j + 1]
-            if len(merged) == 6 and HUID_REGEX.match(merged):
-                avg_conf = (all_tokens[j]["conf"] + all_tokens[j + 1]["conf"]) / 2
+        clean_tokens = [token for token in all_tokens if token["text"]]
+        for j in range(len(clean_tokens) - 1):
+            merged = clean_tokens[j]["text"] + clean_tokens[j + 1]["text"]
+            if _is_ocr_huid_candidate(merged):
+                avg_conf = (clean_tokens[j]["conf"] + clean_tokens[j + 1]["conf"]) / 2
                 candidates.append({"text": merged, "original": merged, "conf": avg_conf})
             elif len(merged) == 7 and merged.isdigit():
-                avg_conf = (all_tokens[j]["conf"] + all_tokens[j + 1]["conf"]) / 2
+                avg_conf = (clean_tokens[j]["conf"] + clean_tokens[j + 1]["conf"]) / 2
                 candidates.append({"text": merged, "original": merged, "conf": avg_conf, "type": "isi"})
             elif len(merged) == 8 and merged.isdigit():
-                avg_conf = (all_tokens[j]["conf"] + all_tokens[j + 1]["conf"]) / 2
+                avg_conf = (clean_tokens[j]["conf"] + clean_tokens[j + 1]["conf"]) / 2
                 candidates.append({"text": merged, "original": merged, "conf": avg_conf, "type": "crs"})
 
         # ── Pass 3: regex search over concatenated full text ─────────────────
         combined_upper = re.sub(r"[^A-Z0-9]", "", full_text_combined.upper())
         cml_matches = re.findall(r"(?:CML)?(\d{7})", combined_upper)
         crs_matches = re.findall(r"(?:R)?(\d{8})", combined_upper)
-        huid_matches = re.findall(r"[0-9A-Z]{6}", combined_upper)
+        huid_matches = re.findall(
+            r"(?<![0-9A-Z])[0-9A-Z]{6}(?![0-9A-Z])",
+            full_text_combined.upper(),
+        )
 
         for m in cml_matches:
             candidates.append({"text": m, "original": m, "conf": 40.0, "type": "isi"})
         for m in crs_matches:
             candidates.append({"text": m, "original": m, "conf": 40.0, "type": "crs"})
         for m in huid_matches:
-            if HUID_REGEX.match(m):
+            if _is_ocr_huid_candidate(m):
                 candidates.append({"text": m, "original": m, "conf": 40.0})
 
         if not candidates:
+            purity_marks = sorted({
+                token["text"] for token in all_tokens
+                if token["text"] in VALID_PURITY_MARKS
+            })
+            detected_purity = purity_marks[0] if purity_marks else None
+            if detected_purity:
+                return {
+                    "status": "incomplete",
+                    "valid": False,
+                    "verified": False,
+                    "mark_type": "Gold Hallmark Image",
+                    "code": "Not detected",
+                    "confidence": 0.0,
+                    "ocr_confidence": max(
+                        token["conf"] for token in all_tokens
+                        if token["text"] == detected_purity
+                    ),
+                    "purity_mark": detected_purity,
+                    "standard": "IS 1417",
+                    "evidence": {
+                        "purity_mark_detected": True,
+                        "huid_detected": False,
+                        "hallmark_context": hallmark_context,
+                    },
+                    "reason": (
+                        f"OCR successfully read the purity mark '{detected_purity}', but this is not a HUID. "
+                        "No separate 6-character Hallmark Unique Identification code is visible in the image, "
+                        "so authenticity cannot be checked from this photo."
+                    ),
+                    "disclaimer": "A purity mark alone does not uniquely identify or authenticate the jewellery item.",
+                    "official_handoff": "Photograph the separate 6-character HUID at close range, or verify it manually in the BIS CARE app.",
+                    "citations": [
+                        {"kind": "standard", "ref": "IS 1417", "status": "ACTIVE", "title": "Gold and Gold Alloys - Hallmarking"},
+                        {"kind": "portal", "ref": "BIS CARE Mobile App", "url": "https://www.bis.gov.in/consumer-overview/bis-care-app/"},
+                    ],
+                    "ocr_text": full_text_combined,
+                }
             return {
                 "status": "not_detected",
                 "valid": False,

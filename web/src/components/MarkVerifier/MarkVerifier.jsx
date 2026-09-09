@@ -45,8 +45,16 @@ export default function MarkVerifier() {
   const score = Math.round((result?.confidence || 0) * 100);
   const isPlausible = result?.status === 'structurally_plausible';
   const isSuspicious = result?.status === 'suspicious';
+  const isIncomplete = result?.status === 'incomplete';
+  const displayScore = isIncomplete ? Math.round(result?.ocr_confidence || 0) : score;
   const evidenceChecks = useMemo(() => {
     if (!result) return [];
+    if (isIncomplete) return [
+      [result.evidence?.purity_mark_detected, 'Purity mark extracted', result.purity_mark || 'No fineness mark detected'],
+      [result.evidence?.huid_detected, 'Separate HUID detected', 'A distinct 6-character identifier is required'],
+      [result.evidence?.hallmark_context, 'Hallmark context', 'BIS hallmark labels were recognised'],
+      [result.verified, 'Registry authenticity', 'Requires confirmation through BIS CARE']
+    ];
     if (markType === 'huid') return [
       [result.evidence?.length_valid, 'Length rule', 'Exactly 6 characters required'],
       [result.evidence?.mixed_alphanumeric, 'Character mix', 'Contains both letters and numbers'],
@@ -58,7 +66,7 @@ export default function MarkVerifier() {
       [score >= 60, 'Extraction confidence', `${score}% structural confidence`],
       [Boolean(result.code), 'Normalised identifier', result.code || 'No code extracted']
     ];
-  }, [result, markType, purity, isPlausible, score]);
+  }, [result, markType, purity, isPlausible, isIncomplete, score]);
 
   return <div className="container section-rhythm verifier-page">
     <header className="feature-page-hero">
@@ -84,11 +92,11 @@ export default function MarkVerifier() {
         {state === 'loading' && <div className="verification-placeholder active"><div className="scanner-animation"><ScanLine size={30} /></div><strong>Running the validation pipeline</strong><span>OCR extraction → normalisation → grammar rules → official handoff</span></div>}
         {error && <div className="feature-alert error"><ShieldAlert size={19} />{error}</div>}
 
-        {result && <section className={`mark-result-card ${isPlausible ? 'pass' : isSuspicious ? 'warn' : 'fail'}`}>
+        {result && <section className={`mark-result-card ${isPlausible ? 'pass' : isSuspicious || isIncomplete ? 'warn' : 'fail'}`}>
           <div className="mark-result-header">
-            <div className="confidence-ring" style={{ '--score': `${score * 3.6}deg` }}><span><strong>{score}%</strong><small>format score</small></span></div>
-            <div><span className="result-eyebrow">STRUCTURAL ANALYSIS COMPLETE</span><h2>{isPlausible ? 'Format is structurally plausible' : isSuspicious ? 'Review recommended' : 'Format check failed'}</h2><p>{result.code || result.candidate} · {result.mark_type}</p></div>
-            <span className="result-status-pill">{isPlausible ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}{isPlausible ? 'Passed rules' : isSuspicious ? 'Suspicious' : 'Invalid'}</span>
+            <div className="confidence-ring" style={{ '--score': `${displayScore * 3.6}deg` }}><span><strong>{displayScore}%</strong><small>{isIncomplete ? 'OCR confidence' : 'format score'}</small></span></div>
+            <div><span className="result-eyebrow">STRUCTURAL ANALYSIS COMPLETE</span><h2>{isPlausible ? 'Format is structurally plausible' : isIncomplete ? 'Purity mark found — HUID missing' : isSuspicious ? 'Review recommended' : 'Format check failed'}</h2><p>{result.purity_mark || result.code || result.candidate} · {result.mark_type}</p></div>
+            <span className="result-status-pill">{isPlausible ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}{isPlausible ? 'Passed rules' : isIncomplete ? 'Incomplete mark' : isSuspicious ? 'Suspicious' : 'Invalid'}</span>
           </div>
           <div className="mark-result-body"><div><h3>Machine checks</h3><div className="analysis-checks">{evidenceChecks.map(([pass, label, detail]) => <AnalysisCheck key={label} pass={pass} label={label} detail={detail} />)}</div></div><div className="reason-card"><span>ENGINE EXPLANATION</span><p>{result.reason}</p>{result.ocr_text && <div><strong>Extracted OCR text</strong><code>{result.ocr_text}</code></div>}</div></div>
           <div className="official-handoff"><div><ShieldAlert size={19} /><span><strong>Final authenticity check required</strong><small>{result.official_handoff || result.handoff}</small></span></div>{result.citations?.find((item) => item.url) && <a href={result.citations.find((item) => item.url).url} target="_blank" rel="noreferrer">Continue to {active.portal} <ExternalLink size={14} /></a>}</div>

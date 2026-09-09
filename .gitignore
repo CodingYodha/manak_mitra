@@ -33,6 +33,7 @@ Thumbs.db
 
 # Web frontend
 web/node_modules/
+web/.certs/
 node_modules/
 npm-debug.log
 

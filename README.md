@@ -227,6 +227,21 @@ npm run dev
 ```
 Open `http://localhost:5173` in your browser.
 
+For microphone access through a LAN address, Chrome requires a trusted HTTPS
+origin. On macOS, create a local certificate and use Vite's same-origin API
+proxy:
+```bash
+brew install mkcert
+mkcert -install
+mkdir -p web/.certs
+mkcert -cert-file web/.certs/dev-cert.pem -key-file web/.certs/dev-key.pem \
+  192.168.137.53 localhost 127.0.0.1 ::1
+cd web
+VITE_API_BASE_URL= npm run dev -- --host 0.0.0.0
+```
+Then open `https://192.168.137.53:5173`. Other devices must trust the mkcert
+root CA from `mkcert -CAROOT`; never commit that CA or the generated private key.
+
 ### 6. Starting Multilingual Local Voice (Optional)
 RealtimeSTT runs as an isolated Python 3.12 sidecar so its ML dependencies do not affect the main API environment:
 ```bash

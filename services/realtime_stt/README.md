@@ -20,4 +20,6 @@ into `services/realtime_stt/models/`. Override them with
 The assistant automatically falls back to the browser SpeechRecognition API
 when the local service is stopped or unavailable. Microphone capture requires a
 secure browser context: `localhost` works for local demos; LAN devices require
-HTTPS.
+HTTPS. For local-network development, generate the ignored Vite certificates
+described in the root README and start Vite with an empty
+`VITE_API_BASE_URL` so API and WebSocket traffic use its same-origin proxy.
