@@ -13,6 +13,7 @@ import sqlite3
 import json
 import pathlib
 import datetime
+import re
 from typing import List, Dict, Any, Optional
 
 DB = pathlib.Path(__file__).parent.parent / "manak.db"
@@ -34,7 +35,6 @@ def init():
         ingest.init_schema(c)
 
         # Check if database has been populated
-        qco_count = c.execute("SELECT count(*) FROM qco").fetchone()[0]
         prod_count = c.execute("SELECT count(*) FROM qco_items").fetchone()[0]
         lab_count = c.execute("SELECT count(*) FROM labs").fetchone()[0]
 
@@ -82,6 +82,73 @@ def mandate_for(term: str) -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
+_MATCH_STOPWORDS = {"and", "for", "of", "the", "with", "use", "in", "to", "a", "an", "part", "general", "product"}
+_MATCH_SYNONYMS = {"bulb": "lamp", "bulbs": "lamp", "lamps": "lamp", "toys": "toy", "children": "child", "jewellery": "jewelry"}
+
+
+def _terms(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", (text or "").lower())
+    return {_MATCH_SYNONYMS.get(word, word[:-1] if word.endswith("s") and len(word) > 3 else word) for word in words if len(word) > 1 and word not in _MATCH_STOPWORDS}
+
+
+def passport_candidates(query: str, limit: int = 8) -> List[Dict[str, Any]]:
+    """Return ranked, evidence-backed QCO product items for passport disambiguation.
+
+    This deliberately does not use semantic-vector matches: a passport makes a
+    regulatory decision and must be anchored to a specific curated QCO item.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+    query_terms = _terms(query)
+    normalized_is = re.sub(r"[^A-Z0-9]", "", query.upper())
+    digits_only = re.sub(r"\D", "", query)
+
+    with conn() as c:
+        rows = [dict(row) for row in c.execute("""
+            SELECT i.id, i.qco_id, i.product_desc, i.category, i.hsn_codes, i.is_number,
+                   i.scheme, i.effective_on, i.confidence,
+                   COALESCE(i.notification_url, q.gazette_url) AS gazette_url,
+                   q.title AS qco_title, q.ministry, q.retrieved_on, q.source_url
+            FROM qco_items i LEFT JOIN qco q ON q.qco_id = i.qco_id
+        """).fetchall()]
+
+    ranked = []
+    for row in rows:
+        product_text = f"{row.get('product_desc', '')} {row.get('category', '')}"
+        product_terms = _terms(product_text)
+        score = 0.0
+        exact = False
+        if normalized_is and normalized_is == re.sub(r"[^A-Z0-9]", "", (row.get("is_number") or "").upper()):
+            score, exact = 1.0, True
+        elif digits_only and len(digits_only) >= 4 and any(digits_only == re.sub(r"\D", "", hsn) for hsn in re.split(r"[,;/\\s]+", row.get("hsn_codes") or "") if hsn):
+            score, exact = 0.98, True
+        elif query_terms and product_terms:
+            overlap = len(query_terms & product_terms)
+            # Require at least one meaningful term. Exact phrase contains are
+            # preferred, then overlap scaled by query specificity.
+            if query.lower() in product_text.lower():
+                score = 0.9
+            elif overlap:
+                score = overlap / max(len(query_terms), 1)
+                if overlap == 1 and len(query_terms) > 1:
+                    score *= 0.65
+        if score >= 0.45:
+            row["match_score"] = round(score, 3)
+            row["exact_match"] = exact
+            ranked.append(row)
+
+    ranked.sort(key=lambda item: (item["exact_match"], item["match_score"], item.get("confidence") or 0), reverse=True)
+    unique = []
+    seen = set()
+    for item in ranked:
+        key = (item.get("qco_id"), item.get("is_number"), item.get("product_desc"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique[:limit]
+
+
 def get_labs_for_standard(is_number: str, city: str = "", limit: int = 5) -> List[Dict[str, Any]]:
     """
     Finds BIS-recognized labs that specifically test a given Indian Standard (IS number).
@@ -116,6 +183,21 @@ def get_labs_for_standard(is_number: str, city: str = "", limit: int = 5) -> Lis
         return get_nearest_labs(city=city, category=category_guess, limit=limit)
 
 
+def get_verified_labs_for_standard(is_number: str, city: str = "", limit: int = 5) -> List[Dict[str, Any]]:
+    """Return only explicit BIS LIMS standard-scope mappings; never general labs."""
+    if not is_number:
+        return []
+    with conn() as c:
+        rows = c.execute("""
+            SELECT lab_name AS name, city, state, is_number, product_name, category,
+                   lab_code, source_url, mapping_status
+            FROM lab_standards
+            WHERE lower(is_number) LIKE ? AND lower(city) LIKE ?
+            LIMIT ?
+        """, (f"%{is_number.strip().lower()}%", f"%{city.strip().lower()}%" if city else "%", limit)).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_nearest_labs(city: str = "", category: str = "", limit: int = 5) -> List[Dict[str, Any]]:
     """
     Queries nearest accredited BIS labs filtered by city and category.
@@ -132,6 +214,29 @@ def get_nearest_labs(city: str = "", category: str = "", limit: int = 5) -> List
         """, (city_q, cat_q, limit)).fetchall()
 
         return [dict(r) for r in rows]
+
+
+def lab_catalog(query: str = "", city: str = "", category: str = "", limit: int = 24) -> Dict[str, Any]:
+    """Search the curated laboratory directory without inventing contact details."""
+    limit = max(1, min(limit, 100))
+    query_pattern = f"%{query.strip().lower()}%" if query.strip() else "%"
+    city_pattern = f"%{city.strip().lower()}%" if city.strip() else "%"
+    category_pattern = f"%{category.strip().lower()}%" if category.strip() else "%"
+    with conn() as c:
+        total = c.execute("SELECT count(*) FROM labs").fetchone()[0]
+        rows = c.execute("""
+            SELECT lab_id, name, city, state, categories
+            FROM labs
+            WHERE lower(city) LIKE ? AND lower(categories) LIKE ?
+              AND (lower(name) LIKE ? OR lower(city) LIKE ? OR lower(state) LIKE ? OR lower(categories) LIKE ?)
+            ORDER BY state, city, name
+            LIMIT ?
+        """, (city_pattern, category_pattern, query_pattern, query_pattern, query_pattern, query_pattern, limit)).fetchall()
+        cities = [row[0] for row in c.execute("SELECT DISTINCT city FROM labs WHERE city <> '' ORDER BY city").fetchall()]
+        category_rows = c.execute("SELECT categories FROM labs WHERE categories <> ''").fetchall()
+        categories = sorted({item.strip() for row in category_rows for item in row[0].replace(";", ",").split(",") if item.strip()})
+    return {"labs": [dict(row) for row in rows], "total_indexed": total, "cities": cities, "categories": categories,
+            "source_url": "https://lims.bis.gov.in/", "retrieved": True}
 
 
 def get_all_standards(limit: int = 300) -> List[Dict[str, Any]]:
@@ -162,6 +267,7 @@ def get_stats() -> Dict[str, Any]:
     with conn() as c:
         total = c.execute("SELECT count(*) FROM query_log").fetchone()[0]
         abstained = c.execute("SELECT count(*) FROM query_log WHERE abstained = 1").fetchone()[0]
+        qco_count = c.execute("SELECT count(*) FROM qco").fetchone()[0]
         qco_items_count = c.execute("SELECT count(*) FROM qco_items").fetchone()[0]
         labs_count = c.execute("SELECT count(*) FROM labs").fetchone()[0]
         lab_standards_count = c.execute("SELECT count(*) FROM lab_standards").fetchone()[0]
