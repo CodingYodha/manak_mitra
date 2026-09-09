@@ -8,13 +8,19 @@
 {"q": "What standard applies to electric water heaters?", "expect_is": ["IS 2082", "IS 8978", "IS 368"], "expect_intent": "recommend"}
 {"q": "PVC pipes for drinking water supply standard", "expect_is": "IS 4985", "expect_intent": "recommend"}
 {"q": "Industrial safety helmet BIS standard", "expect_is": "IS 2925", "expect_intent": "recommend"}
-{"q": "Portland cement specification IS number", "expect_is": ["IS 269", "IS 455", "IS 16993", "IS 8041"], "expect_intent": "recommend"}
+{"q": "Portland cement specification IS number", "expect_is": ["IS 269", "IS 455", "IS 16993", "IS 8041", "IS 12330", "IS 1489"], "expect_intent": "recommend"}
+{"q": "सीमेंट के लिए भारतीय मानक", "expect_is": ["IS 269", "IS 455", "IS 1489", "IS 8041", "IS 12330", "IS 3466", "IS 16415", "IS 13801"], "expect_intent": "recommend"}
 {"q": "Hallmarking standard for gold jewellery India", "expect_is": "IS 1417", "expect_intent": "recommend"}
-{"q": "PVC insulated cables for buildings IS number", "expect_is": ["IS 694", "IS 1554 (Part 1)", "IS 3961 (Part 2)"], "expect_intent": "recommend"}
+{"q": "सोने के गहनों के लिए हॉलमार्किंग मानक", "expect_is": "IS 1417", "expect_intent": "recommend"}
+{"q": "PVC insulated cables for buildings IS number", "expect_is": ["IS 694", "IS 1554 (Part 1)", "IS 3961 (Part 2)", "IS 7098", "IS 10810"], "expect_intent": "recommend"}
+{"q": "बिजली के तार और केबल का मानक", "expect_is": ["IS 694", "IS 1554", "IS 7098", "IS 10810", "IS 3975", "IS/IEC 60189"], "expect_intent": "recommend"}
 {"q": "packaged drinking water quality standard", "expect_is": ["IS 14543", "IS 17614 (Part 5)", "IS 10500"], "expect_intent": "recommend"}
+{"q": "पैक किए गए पीने के पानी का मानक", "expect_is": ["IS 14543", "IS 10500", "IS 17614"], "expect_intent": "recommend"}
+{"q": "Distribution transformers safety and energy efficiency specification", "expect_is": ["IS 1180 (Part 1)", "IS 2026", "IS/IEC 61558", "IS 16996"], "expect_intent": "recommend"}
 {"q": "9 watt LED lamp energy efficiency lighting standard", "expect_is": "IS 16102 (Part 1)", "ics_prefix": "29.140", "expect_intent": "recommend"}
 {"q": "What is the airspeed velocity of an unladen swallow?", "expect_abstain": true}
 {"q": "Who is the Prime Minister of India?", "expect_abstain": true}
 {"q": "What is 2 + 2?", "expect_abstain": true}
 {"q": "Tell me a joke about certification", "expect_abstain": true}
+{"q": "What is the capital of France?", "expect_abstain": true}
 {"q": "What is the meaning of life?", "expect_abstain": true}

@@ -12,8 +12,11 @@ def enforce(text: str, allowed_refs: list[str]) -> str:
     Deletes any IS number the retrieval layer did not explicitly return.
     Prevents the LLM from hallucinating standards.
     """
-    # Normalize allowed references (e.g. 'IS 16102 (Part 1)' -> 'IS16102(PART1)')
-    ok = {r.replace(" ", "").upper() for r in allowed_refs}
+    # Extract base IS numbers from allowed references (e.g. 'IS 16102 (Part 1)' -> 'IS16102')
+    ok = set()
+    for r in allowed_refs:
+        for m in IS_PAT.findall(str(r)):
+            ok.add(m.replace(" ", "").upper())
     
     # Find all IS numbers in the generated text
     for m in set(IS_PAT.findall(text)):

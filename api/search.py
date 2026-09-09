@@ -52,9 +52,23 @@ HINDI_TERM_EXPANSIONS = {
     'सीमेंट': 'cement',
     'सोने': 'gold',
     'सोना': 'gold',
+    'चांदी': 'silver',
     'पानी': 'water',
     'गीजर': 'water heater',
     'हीटर': 'heater',
+    'केबल': 'cable wire',
+    'तार': 'wire cable',
+    'स्टील': 'steel',
+    'लोहा': 'iron steel',
+    'हेलमेट': 'helmet',
+    'प्लास्टिक': 'plastic',
+    'ट्रांसफार्मर': 'transformer',
+    'पंखा': 'fan electric fan',
+    'पंखे': 'fan electric fan',
+    'जूते': 'footwear shoes safety footwear',
+    'दूध': 'milk infant milk food',
+    'बैटरी': 'battery secondary cells',
+    'सोलर': 'solar photovoltaic'
 }
 
 _STOPWORDS = {

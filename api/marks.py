@@ -1,456 +1,315 @@
 """
-Manak Mitra — Mark Analysis Module
-Owner: Jay · feat/jay
+Manak Mitra — Mark & Licence Verification Engine
+Owner: Jay & Rudra
 
-Provides structural validation for BIS certification marks:
-  - HUID (Hallmark Unique Identification) — 6-char alphanumeric
-  - Purity / fineness codes — 375, 585, 750, 916, 958, 999
-  - ISI licence numbers — CM/L-XXXXXXX
-  - CRS registration numbers — R-XXXXXXXX
-
-Integrates Tesseract OCR for camera input with typed-code fallback.
-Does NOT claim live HUID verification — all checks are structural/syntactic.
-Authoritative verification: BIS CARE Mobile App / crsbis.in / manakonline.in
-
-Public API:
-    validate_huid(code) -> dict
-    validate_purity(code) -> dict
-    validate_isi_licence(code) -> dict
-    validate_crs_rnumber(code) -> dict
-    validate_typed(code, mark_type) -> dict  (typed-code fallback)
-    analyze_text(text) -> dict               (detect marks inside free text)
-    ocr_image(path_or_bytes) -> dict         (Tesseract OCR + analysis)
-    analyze_mark(input_text_or_image) -> dict (unified entry)
+Provides rule-based validation and OCR recognition for:
+1. Gold Hallmark HUID (Hallmark Unique Identification — 6 alphanumeric digits, IS 1417)
+2. ISI Certification Mark Licence (CM/L-XXXXXXX — 7 digits under Scheme-I)
+3. CRS Electronic Goods Registration (R-XXXXXXXX — 8 digits under MeitY)
+4. FMCS Foreign Manufacturer Licences
+5. Consumer protection guidance against counterfeit markings
 """
-import pathlib
+import io
 import re
-import yaml
-from typing import Optional
+import logging
+from typing import Dict, Any, Optional, List
 
-_ROOT = pathlib.Path(__file__).parent.parent
-_MARKS_PATH = _ROOT / "data" / "curated" / "marks.yaml"
+logger = logging.getLogger("manak.marks")
 
-# ── Cached data ──────────────────────────────────────────────────────────
-_marks_cache: Optional[dict] = None
+# ── Regex Patterns ──────────────────────────────────────────────────────────
+HUID_REGEX = re.compile(r"^[0-9A-Z]{6}$", re.I)
+ISI_CML_REGEX = re.compile(r"^(?:CM/L[- ]?)?(\d{7})$", re.I)
+CRS_R_REGEX = re.compile(r"^(?:R[- ]?)?(\d{8})$", re.I)
 
-DISCLAIMER = (
-    "Structural check only — not a live BIS database lookup. "
-    "For authoritative confirmation use BIS CARE app (HUID), "
-    "manakonline.in (ISI), or crsbis.in (CRS)."
-)
-
-HUID_DISCLAIMER = (
-    "We read the mark structure and catch structural fakes; "
-    "for authoritative HUID confirmation, use BIS CARE app. "
-    "There is no public HUID verification API."
-)
-
-# Fallback constants if marks.yaml missing
-_FALLBACK = {
-    "huid": {"pattern": r"^[0-9A-Z]{6}$", "length": 6, "charset": "[0-9A-Z]"},
-    "purity": {"valid": ["375", "585", "750", "916", "958", "999"]},
-    "isi_licence": {"pattern": r"^CM/L-[0-9]{7}$"},
-    "crs_rnumber": {"pattern": r"^R-[0-9]{8}$"},
+# Recognised gold purity fineness grades under IS 1417
+VALID_GOLD_PURITIES = {
+    "375": {"karat": "9K", "description": "37.5% Pure Gold (9 Karat)"},
+    "585": {"karat": "14K", "description": "58.5% Pure Gold (14 Karat)"},
+    "750": {"karat": "18K", "description": "75.0% Pure Gold (18 Karat)"},
+    "916": {"karat": "22K", "description": "91.6% Pure Gold (22 Karat - Most Common)"},
+    "958": {"karat": "23K", "description": "95.8% Pure Gold (23 Karat)"},
+    "999": {"karat": "24K", "description": "99.9% Pure Gold (24 Karat - Bullion/Coin)"},
 }
 
 
-def load_marks() -> dict:
-    global _marks_cache
-    if _marks_cache is not None:
-        return _marks_cache
-    if not _MARKS_PATH.exists():
-        _marks_cache = _FALLBACK.copy()
-        return _marks_cache
-    with open(_MARKS_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    # Ensure fallback keys exist
-    for k, v in _FALLBACK.items():
-        if k not in data:
-            data[k] = v
-    _marks_cache = data
-    return _marks_cache
+def detect_mark_type(code: str) -> str:
+    """Auto-detects mark type from code structure."""
+    c = code.strip().upper()
+    if c.startswith("CM/L") or (len(c) == 7 and c.isdigit()):
+        return "isi"
+    if c.startswith("R-") or (len(c) == 8 and c.isdigit()):
+        return "crs"
+    if len(c) == 6 and bool(HUID_REGEX.match(c)):
+        return "huid"
+    return "unknown"
 
 
-def reload_marks() -> dict:
-    global _marks_cache
-    _marks_cache = None
-    return load_marks()
-
-
-# ── Regex compilation ──────────────────────────────────────────────────
-def _compile_patterns():
-    m = load_marks()
-    return {
-        "huid": re.compile(m.get("huid", {}).get("pattern", _FALLBACK["huid"]["pattern"])),
-        "isi": re.compile(m.get("isi_licence", {}).get("pattern", _FALLBACK["isi_licence"]["pattern"])),
-        "crs": re.compile(m.get("crs_rnumber", {}).get("pattern", _FALLBACK["crs_rnumber"]["pattern"])),
-        # Search patterns (without anchors) for detection inside text
-        "huid_search": re.compile(r"\b[0-9A-Z]{6}\b"),
-        "isi_search": re.compile(r"CM/L-\d{7}"),
-        "crs_search": re.compile(r"R-\d{8}"),
-        "purity_search": re.compile(r"\b(375|585|750|916|958|999)\b"),
-    }
-
-
-_PATTERNS = None
-
-
-def _patterns():
-    global _PATTERNS
-    if _PATTERNS is None:
-        _PATTERNS = _compile_patterns()
-    return _PATTERNS
-
-
-# ── Validators ─────────────────────────────────────────────────────────
-
-def validate_huid(code: str) -> dict:
-    """Structural validation for HUID (6-char alphanumeric)."""
-    raw = code.strip()
-    # HUID is uppercase, strict
-    m = load_marks()
-    valid = bool(_patterns()["huid"].match(raw))
-    purity_info = m.get("huid", {})
-    reason = ""
-    if valid:
-        reason = "HUID structure is valid (6 alphanumeric characters)."
-    else:
-        if len(raw) != 6:
-            reason = f"HUID must be exactly 6 characters, got {len(raw)}."
-        elif raw != raw.upper():
-            reason = "HUID must be uppercase A-Z and digits 0-9 only."
-        elif not re.match(r"^[0-9A-Z]+$", raw):
-            reason = "HUID may contain only digits 0-9 and uppercase A-Z (no hyphens/spaces/lowercase)."
-        else:
-            reason = "HUID format invalid — expected 6 alphanumeric characters."
-    return {
-        "mark_type": "huid",
-        "input": code,
-        "normalized": raw,
-        "valid": valid,
-        "reason": reason,
-        "pattern": m.get("huid", {}).get("pattern", _FALLBACK["huid"]["pattern"]),
-        "examples_valid": m.get("huid", {}).get("examples", {}).get("valid", ["9A2F8K"]),
-        "disclaimer": HUID_DISCLAIMER,
-        "authoritative": m.get("huid", {}).get("verification", {}).get("authoritative", "BIS CARE Mobile App"),
-    }
-
-
-def validate_purity(code: str) -> dict:
-    """Validate BIS-recognised gold purity/fineness code."""
-    raw = code.strip()
-    m = load_marks()
-    valid_codes = m.get("purity", {}).get("valid", _FALLBACK["purity"]["valid"])
-    labels = m.get("purity", {}).get("labels", {})
-    valid = raw in valid_codes
-    if valid:
-        reason = f"Valid BIS purity grade: {raw} ({labels.get(raw, '')})."
-    else:
-        reason = f"Invalid purity code '{raw}'. Valid grades: {', '.join(valid_codes)}."
-    return {
-        "mark_type": "purity",
-        "input": code,
-        "normalized": raw,
-        "valid": valid,
-        "reason": reason,
-        "valid_codes": valid_codes,
-        "label": labels.get(raw) if valid else None,
-        "governing_standard": m.get("purity", {}).get("governing_standard", "IS 1417"),
-        "disclaimer": DISCLAIMER,
-    }
-
-
-def validate_isi_licence(code: str) -> dict:
-    """Validate ISI licence number CM/L-XXXXXXX."""
-    raw = code.strip()
-    m = load_marks()
-    valid = bool(_patterns()["isi"].match(raw))
-    if valid:
-        reason = "ISI licence number structure is valid (CM/L- followed by 7 digits)."
-    else:
-        if not raw.startswith("CM/L-"):
-            reason = "ISI licence must start with 'CM/L-' prefix."
-        elif not re.match(r"^CM/L-\d+$", raw):
-            reason = "ISI licence suffix must be digits only after CM/L-."
-        elif len(raw) != 11:  # CM/L- (5) + 7 = 12? Actually CM/L- is 5 chars, +7 =12
-            # Let's compute: C(1) M(1) /(1) L(1) -(1) =5, +7=12
-            reason = f"ISI licence must have exactly 7 digits after CM/L-, got {len(raw)-5}."
-        else:
-            reason = "ISI licence format invalid — expected CM/L-XXXXXXX (7 digits)."
-    return {
-        "mark_type": "isi_licence",
-        "input": code,
-        "normalized": raw,
-        "valid": valid,
-        "reason": reason,
-        "pattern": m.get("isi_licence", {}).get("pattern", _FALLBACK["isi_licence"]["pattern"]),
-        "disclaimer": DISCLAIMER,
-        "authoritative": m.get("isi_licence", {}).get("verification", {}).get("authoritative", "BIS MANAK Online Portal"),
-    }
-
-
-def validate_crs_rnumber(code: str) -> dict:
-    """Validate CRS registration number R-XXXXXXXX."""
-    raw = code.strip()
-    m = load_marks()
-    valid = bool(_patterns()["crs"].match(raw))
-    if valid:
-        reason = "CRS R-number structure is valid (R- followed by 8 digits)."
-    else:
-        if not raw.startswith("R-"):
-            reason = "CRS R-number must start with 'R-' prefix."
-        elif not re.match(r"^R-\d+$", raw):
-            reason = "CRS R-number suffix must be digits only after R-."
-        elif len(raw) != 10:  # R- (2) +8 =10
-            reason = f"CRS R-number must have exactly 8 digits after R-, got {len(raw)-2}."
-        else:
-            reason = "CRS R-number format invalid — expected R-XXXXXXXX (8 digits)."
-    return {
-        "mark_type": "crs_rnumber",
-        "input": code,
-        "normalized": raw,
-        "valid": valid,
-        "reason": reason,
-        "pattern": m.get("crs_rnumber", {}).get("pattern", _FALLBACK["crs_rnumber"]["pattern"]),
-        "disclaimer": DISCLAIMER,
-        "authoritative": m.get("crs_rnumber", {}).get("verification", {}).get("authoritative", "CRS BIS Portal"),
-    }
-
-
-def validate_typed(code: str, mark_type: str) -> dict:
+def verify_huid(code: str, purity: Optional[str] = None) -> Dict[str, Any]:
     """
-    Typed-code fallback: validate a manually entered code by mark_type.
-    mark_type: huid | purity | isi_licence | crs_rnumber | auto
+    Validates a 6-character alphanumeric Gold Hallmark HUID code under IS 1417.
     """
-    t = mark_type.strip().lower()
-    if t in ("huid", "hallmark", "huid_code"):
-        return validate_huid(code)
-    elif t in ("purity", "fineness", "karat"):
-        return validate_purity(code)
-    elif t in ("isi", "isi_licence", "cm/l", "cm_l"):
-        return validate_isi_licence(code)
-    elif t in ("crs", "crs_rnumber", "r-number", "r_number"):
-        return validate_crs_rnumber(code)
-    elif t == "auto":
-        # Try all validators, return first valid or all results
-        results = {
-            "huid": validate_huid(code),
-            "purity": validate_purity(code),
-            "isi_licence": validate_isi_licence(code),
-            "crs_rnumber": validate_crs_rnumber(code),
+    clean_code = code.strip().upper()
+    
+    if not HUID_REGEX.match(clean_code):
+        return {
+            "valid": False,
+            "mark_type": "Gold Hallmark HUID",
+            "code": clean_code,
+            "purity": purity,
+            "standard": "IS 1417",
+            "reason": (
+                "Structural syntax violation: An authentic BIS Hallmark HUID must be exactly 6 alphanumeric "
+                "characters (digits 0-9 and capital letters A-Z). Symbols, spaces, or incorrect character counts "
+                "indicate counterfeit or improper stamping."
+            ),
+            "official_handoff": "Verify real-time status in the official 'BIS CARE' mobile app or report to DoCA.",
+            "citations": [
+                {"kind": "standard", "ref": "IS 1417", "status": "ACTIVE", "title": "Gold and Gold Alloys, Silver and Silver Alloys - Hallmarking"},
+                {"kind": "portal", "ref": "BIS CARE Mobile App", "url": "https://www.bis.gov.in/consumer-overview/bis-care-app/"}
+            ]
         }
-        # If any valid, return the valid one
-        for k, v in results.items():
-            if v["valid"]:
-                return v
-        # Otherwise return all with overall invalid
-        return {"mark_type": "auto", "input": code, "valid": False, "reason": "No mark type matched.", "details": results, "disclaimer": DISCLAIMER}
-    else:
-        return {"mark_type": mark_type, "input": code, "valid": False, "reason": f"Unknown mark_type '{mark_type}'. Use huid, purity, isi_licence, crs_rnumber, or auto.", "disclaimer": DISCLAIMER}
 
-
-# ── Text analysis (detect marks inside free text / OCR output) ─────────
-
-def analyze_text(text: str) -> dict:
-    """
-    Scan free text for embedded marks. Returns structural findings.
-
-    Does NOT claim live verification — only structural checks.
-    """
-    if not text:
-        return {"input": text, "findings": [], "summary": "No input text.", "disclaimer": DISCLAIMER}
-    findings = []
-    pats = _patterns()
-    # Purity codes
-    for m in pats["purity_search"].findall(text):
-        findings.append(validate_purity(m))
-    # HUID candidates — need to avoid false positives from longer strings
-    # We look for 6-char alphanum tokens; then validate strict
-    for token in re.findall(r"\b[0-9A-Z]{6}\b", text):
-        # Skip if it's a purity code padded? just validate as HUID
-        if token.isdigit() and len(token) == 6:
-            # Could be HUID like 000001 which is valid
-            findings.append(validate_huid(token))
-        elif re.match(r"^[0-9A-Z]{6}$", token):
-            findings.append(validate_huid(token))
-    # ISI licence
-    for m in pats["isi_search"].findall(text):
-        findings.append(validate_isi_licence(m))
-    # CRS R-number
-    for m in pats["crs_search"].findall(text):
-        findings.append(validate_crs_rnumber(m))
-
-    # Deduplicate by (mark_type, normalized)
-    seen = set()
-    uniq = []
-    for f in findings:
-        key = (f["mark_type"], f["normalized"])
-        if key not in seen:
-            seen.add(key)
-            uniq.append(f)
-
-    # Summary
-    valid_count = sum(1 for f in uniq if f["valid"])
-    invalid_count = len(uniq) - valid_count
-    if not uniq:
-        summary = "No BIS marks detected in text."
-    else:
-        summary = f"Detected {len(uniq)} mark(s): {valid_count} structurally valid, {invalid_count} invalid."
-
-    # Hallmark completeness rule: huid should co-occur with purity
-    has_huid = any(f["mark_type"] == "huid" and f["valid"] for f in uniq)
-    has_purity = any(f["mark_type"] == "purity" and f["valid"] for f in uniq)
-    completeness_note = None
-    if has_huid or has_purity:
-        if has_huid and has_purity:
-            completeness_note = "Hallmark completeness: HUID + purity both present — structure looks complete (still needs BIS CARE for authoritative check)."
-        elif has_huid and not has_purity:
-            completeness_note = "Hallmark incomplete: HUID found but no valid purity code (375/585/750/916/958/999) detected alongside."
-        elif has_purity and not has_huid:
-            completeness_note = "Hallmark incomplete: purity code found but no valid 6-char HUID detected alongside."
+    purity_info = VALID_GOLD_PURITIES.get(purity.strip()) if purity else None
+    purity_str = f" ({purity_info['description']})" if purity_info else ""
 
     return {
-        "input": text,
-        "findings": uniq,
-        "summary": summary,
-        "completeness_note": completeness_note,
-        "disclaimer": HUID_DISCLAIMER if has_huid else DISCLAIMER,
+        "valid": True,
+        "mark_type": "Gold Hallmark HUID",
+        "code": clean_code,
+        "purity": purity or "Standard 22K (916) / Any",
+        "standard": "IS 1417",
+        "reason": (
+            f"Valid HUID syntax. Code '{clean_code}' strictly complies with Bureau of Indian Standards "
+            f"structural format regulations under IS 1417{purity_str}. "
+            "A genuine hallmarked piece must feature 3 distinct stamps: 1) The triangular BIS Logo, "
+            "2) The purity/fineness mark (e.g. 22K916), and 3) The 6-digit unique HUID laser code."
+        ),
+        "official_handoff": "For real-time jeweller registration and assaying center verification, enter this code in the official BIS CARE app.",
+        "citations": [
+            {"kind": "standard", "ref": "IS 1417", "status": "ACTIVE", "title": "Gold and Gold Alloys - Hallmarking"},
+            {"kind": "qco", "ref": "Hallmarking of Gold Jewellery Order", "url": "https://consumeraffairs.nic.in/hallmarking"}
+        ]
     }
 
 
-# ── OCR integration ────────────────────────────────────────────────────
-
-def _ocr_extract(image_input) -> dict:
+def verify_isi(code: str, is_number: Optional[str] = None) -> Dict[str, Any]:
     """
-    Low-level OCR extraction. Accepts file path, bytes, or PIL Image.
-    Returns {text, confidence, error}
+    Validates a 7-digit ISI Standard Mark CM/L license code under Scheme-I.
+    """
+    clean_code = code.strip().upper()
+    match = ISI_CML_REGEX.match(clean_code)
+
+    if not match:
+        return {
+            "valid": False,
+            "mark_type": "ISI Standard Mark (Scheme-I)",
+            "code": clean_code,
+            "standard": is_number or "Scheme-I Mandatory Standard",
+            "reason": (
+                f"Invalid ISI license format. Authentic BIS ISI license numbers are formatted as 'CM/L-XXXXXXX' "
+                f"(a 7-digit license number). Provided code '{clean_code}' does not match official license grammar."
+            ),
+            "official_handoff": "Check authorized manufacturers on the BIS Manakonline search portal.",
+            "citations": [
+                {"kind": "portal", "ref": "BIS Manakonline Portal", "url": "https://www.manakonline.in/"}
+            ]
+        }
+
+    cml_digits = match.group(1)
+    return {
+        "valid": True,
+        "mark_type": "ISI Standard Mark (Scheme-I)",
+        "code": f"CM/L-{cml_digits}",
+        "standard": is_number or "Scheme-I Product Certification",
+        "reason": (
+            f"Valid ISI Licence syntax. 'CM/L-{cml_digits}' follows the mandatory 7-digit licensing standard "
+            f"required under Scheme-I. A valid physical ISI mark on packaging must display: "
+            f"1) The official ISI logo, 2) The applicable Indian Standard number on top (e.g., IS 9873), and "
+            f"3) The 7-digit 'CM/L-{cml_digits}' license identifier printed below."
+        ),
+        "official_handoff": "Verify manufacturer name and license validity on the BIS Manakonline registry portal.",
+        "citations": [
+            {"kind": "scheme", "ref": "BIS Scheme-I (Product Certification)", "url": "https://bis.gov.in/product-certification/"},
+            {"kind": "portal", "ref": "Manakonline Search Licence", "url": "https://www.manakonline.in/MANAK/SearchLicence"}
+        ]
+    }
+
+
+def verify_crs(code: str, is_number: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Validates an 8-digit CRS Registration code under MeitY / BIS Scheme-II.
+    """
+    clean_code = code.strip().upper()
+    match = CRS_R_REGEX.match(clean_code)
+
+    if not match:
+        return {
+            "valid": False,
+            "mark_type": "CRS Registration (Scheme-II)",
+            "code": clean_code,
+            "standard": is_number or "Electronics & IT Goods Mandatory Standard",
+            "reason": (
+                f"Invalid CRS registration format. Authentic Compulsory Registration Scheme registrations "
+                f"are formatted as 'R-XXXXXXXX' (an 8-digit registration number). Provided '{clean_code}' does not match."
+            ),
+            "official_handoff": "Search verified electronic product registrations at crsbis.in.",
+            "citations": [
+                {"kind": "portal", "ref": "CRS BIS Official Portal", "url": "https://crsbis.in/"}
+            ]
+        }
+
+    r_digits = match.group(1)
+    return {
+        "valid": True,
+        "mark_type": "CRS Registration (Scheme-II)",
+        "code": f"R-{r_digits}",
+        "standard": is_number or "IS 16102 / Electronics Standard",
+        "reason": (
+            f"Valid CRS Registration syntax. 'R-{r_digits}' follows the mandatory 8-digit electronic goods "
+            f"registration format under MeitY QCO orders. Authentic product labels must display: "
+            f"'Self-Declaration - Conforming to IS XXXXX', the 'R-{r_digits}' code, and the crsbis.in website URL."
+        ),
+        "official_handoff": "Verify registration status, brand, and model details on crsbis.in/BIS/products.do.",
+        "citations": [
+            {"kind": "scheme", "ref": "Compulsory Registration Scheme (CRS)", "url": "https://crsbis.in/"},
+            {"kind": "qco", "ref": "Electronics & IT Goods QCO", "url": "https://www.meity.gov.in/esdm/crs"}
+        ]
+    }
+
+
+def verify_mark(code: str, mark_type: str = "auto", purity: Optional[str] = None, is_number: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Main entry point to verify any BIS mark or licence code.
+    """
+    if not code or not code.strip():
+        return {
+            "valid": False,
+            "mark_type": "Unknown",
+            "code": "",
+            "reason": "Please enter a valid HUID (e.g. '916A1B'), ISI licence (e.g. 'CM/L-1234567'), or CRS code (e.g. 'R-41000001').",
+            "official_handoff": "For live assistance, contact the BIS helpline at 1800-11-4000.",
+            "citations": []
+        }
+
+    t = mark_type.lower()
+    if t == "auto":
+        t = detect_mark_type(code)
+
+    if t in ("huid", "gold", "hallmark"):
+        return verify_huid(code, purity)
+    elif t in ("isi", "cml", "licence", "license"):
+        return verify_isi(code, is_number)
+    elif t in ("crs", "r_number", "electronics"):
+        return verify_crs(code, is_number)
+    else:
+        # Fallback: test all three formats
+        if HUID_REGEX.match(code.strip().upper()):
+            return verify_huid(code, purity)
+        elif ISI_CML_REGEX.match(code.strip().upper()):
+            return verify_isi(code, is_number)
+        elif CRS_R_REGEX.match(code.strip().upper()):
+            return verify_crs(code, is_number)
+
+        return {
+            "valid": False,
+            "mark_type": "Unrecognized Mark",
+            "code": code.strip(),
+            "reason": (
+                f"Code '{code}' does not match any official BIS mark syntax (6-char HUID, 7-digit CM/L license, "
+                "or 8-digit R-number). Please check the stamping on your product."
+            ),
+            "official_handoff": "Verify marks through the BIS CARE mobile app or visit bis.gov.in.",
+            "citations": [
+                {"kind": "portal", "ref": "BIS Official Portal", "url": "https://www.bis.gov.in/"}
+            ]
+        }
+
+
+def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
+    """
+    Extracts text from an uploaded image of a mark and verifies it.
+    Uses pytesseract if installed, otherwise provides informative guidance.
     """
     try:
-        import pytesseract
         from PIL import Image
-        import io
+        import pytesseract
 
-        # Resolve image
-        if isinstance(image_input, (bytes, bytearray)):
-            img = Image.open(io.BytesIO(image_input))
-        elif isinstance(image_input, str) and pathlib.Path(image_input).exists():
-            img = Image.open(image_input)
-        elif hasattr(image_input, "convert"):  # PIL Image
-            img = image_input
+        image = Image.open(io.BytesIO(image_bytes))
+        extracted_text = pytesseract.image_to_string(image)
+        logger.info(f"OCR Extracted text: {extracted_text}")
+
+        # Look for potential codes in extracted text
+        # 1. HUID (6 alphanumeric)
+        huid_matches = re.findall(r"\b[0-9A-Z]{6}\b", extracted_text.upper())
+        # 2. CM/L (7 digits)
+        cml_matches = re.findall(r"(?:CM/L[- ]?)?(\d{7})", extracted_text, re.I)
+        # 3. CRS (8 digits)
+        crs_matches = re.findall(r"(?:R[- ]?)?(\d{8})", extracted_text, re.I)
+
+        if cml_matches:
+            res = verify_isi(cml_matches[0])
+            res["ocr_text"] = extracted_text.strip()
+            return res
+        elif crs_matches:
+            res = verify_crs(crs_matches[0])
+            res["ocr_text"] = extracted_text.strip()
+            return res
+        elif huid_matches:
+            # Pick first valid candidate
+            res = verify_huid(huid_matches[0])
+            res["ocr_text"] = extracted_text.strip()
+            return res
         else:
-            # Try as path string anyway
-            try:
-                img = Image.open(str(image_input))
-            except Exception as e:
-                return {"text": "", "error": f"Cannot open image: {e}", "confidence": 0.0}
-
-        # Preprocessing hints from marks.yaml
-        marks = load_marks()
-        # Basic preprocessing: convert to grayscale
-        if img.mode != "L":
-            img = img.convert("L")
-        # Use pytesseract with expected chars whitelist for better accuracy
-        # Try HUID whitelist first, fallback to general
-        config = "--psm 6"  # Assume uniform block of text
-        text = pytesseract.image_to_string(img, config=config)
-        # Confidence estimate via OSD or data
-        try:
-            data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
-            confs = [int(c) for c in data["conf"] if int(c) != -1]
-            avg_conf = sum(confs) / len(confs) / 100.0 if confs else 0.6
-        except Exception:
-            avg_conf = 0.6
-        return {"text": text.strip(), "error": None, "confidence": round(avg_conf, 3)}
-    except ImportError as e:
-        return {"text": "", "error": f"OCR dependencies missing: {e}. Install pytesseract + pillow and system tesseract.", "confidence": 0.0}
+            return {
+                "valid": False,
+                "mark_type": "Image OCR Scan",
+                "code": "Not detected",
+                "ocr_text": extracted_text.strip() or "No text recognized",
+                "reason": "Could not detect a clear 6-character HUID, 7-digit CM/L licence, or 8-digit CRS number from the image. Please enter the code manually.",
+                "official_handoff": "Upload a higher-resolution photo or check manually in the BIS CARE app.",
+                "citations": []
+            }
+    except ImportError:
+        return {
+            "valid": False,
+            "mark_type": "Image OCR Scan",
+            "code": "",
+            "reason": "OCR engine (pytesseract) is not installed on this server. Please enter the code as text.",
+            "official_handoff": "Type your 6-digit HUID or CM/L licence number directly into the verification box.",
+            "citations": []
+        }
     except Exception as e:
-        return {"text": "", "error": f"OCR failed: {e}", "confidence": 0.0}
+        logger.error(f"OCR Error: {e}")
+        return {
+            "valid": False,
+            "mark_type": "Image OCR Scan",
+            "code": "",
+            "reason": f"Error scanning image: {str(e)}",
+            "official_handoff": "Please enter the code manually.",
+            "citations": []
+        }
 
 
-def ocr_image(image_input) -> dict:
-    """
-    OCR entry point: extract text from image and run structural validation.
-
-    Returns dict with:
-        ocr_text, ocr_confidence, ocr_error, analysis (from analyze_text)
-    Supports typed-code fallback: if OCR fails, caller should use validate_typed().
-    """
-    ocr = _ocr_extract(image_input)
-    analysis = analyze_text(ocr["text"]) if ocr["text"] else {"input": "", "findings": [], "summary": "No text extracted from image.", "disclaimer": DISCLAIMER}
-    return {
-        "ocr_text": ocr["text"],
-        "ocr_confidence": ocr["confidence"],
-        "ocr_error": ocr["error"],
-        "analysis": analysis,
-        "typed_fallback": "If OCR is unclear, type the code manually and call validate_typed(code, mark_type).",
-        "disclaimer": HUID_DISCLAIMER,
-    }
-
-
-def analyze_mark(input_data, mark_type: str = "auto") -> dict:
-    """
-    Unified entry point: accepts either text, typed code, or image path/bytes.
-
-    - If input_data looks like an image path/bytes and mark_type is 'image', run OCR.
-    - Otherwise treat as text/typed code.
-    """
-    # Heuristic: if input is bytes or path to existing image file, treat as image
-    if isinstance(input_data, (bytes, bytearray)):
-        return ocr_image(input_data)
-    if isinstance(input_data, str):
-        p = pathlib.Path(input_data)
-        if p.exists() and p.suffix.lower() in (".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"):
-            return ocr_image(input_data)
-        # Check if caller explicitly said mark_type is image
-        if mark_type.lower() == "image":
-            return ocr_image(input_data)
-        # Otherwise treat as typed text
-        if mark_type.lower() != "auto" and len(input_data.strip().split()) == 1 and len(input_data.strip()) <= 12:
-            # Likely a single code typed
-            return validate_typed(input_data.strip(), mark_type)
-        else:
-            # Free text analysis
-            return analyze_text(input_data)
-    return analyze_text(str(input_data))
-
-
-def get_supported_marks() -> dict:
-    """Return grammar summary for UI / API documentation."""
-    m = load_marks()
-    return {
-        "huid": {"pattern": m.get("huid", {}).get("pattern"), "length": 6, "charset": "[0-9A-Z]", "disclaimer": HUID_DISCLAIMER},
-        "purity": {"valid": m.get("purity", {}).get("valid"), "labels": m.get("purity", {}).get("labels"), "standard": "IS 1417"},
-        "isi_licence": {"pattern": m.get("isi_licence", {}).get("pattern"), "example": "CM/L-1234567"},
-        "crs_rnumber": {"pattern": m.get("crs_rnumber", {}).get("pattern"), "example": "R-41001234"},
-        "disclaimer": DISCLAIMER,
-    }
-
-
-# ── Quick self-test ───────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("Testing marks.py structural validation...\n")
-    tests = [
-        ("9A2F8K", "huid", True),
-        ("000001", "huid", True),
-        ("9a2f8k", "huid", False),
-        ("AB-12C", "huid", False),
-        ("916", "purity", True),
-        ("999", "purity", True),
-        ("925", "purity", False),
-        ("CM/L-1234567", "isi_licence", True),
-        ("CM/L-123456", "isi_licence", False),
-        ("R-41001234", "crs_rnumber", True),
-        ("R-4100123", "crs_rnumber", False),
-    ]
-    ok = 0
-    for code, typ, expect in tests:
-        res = validate_typed(code, typ)
-        status = "PASS" if res["valid"] == expect else "FAIL"
-        if status == "PASS":
-            ok += 1
-        print(f"  [{status}] {typ:12s} '{code}' -> valid={res['valid']} (expected {expect}) : {res['reason']}")
-    print(f"\n{ok}/{len(tests)} tests passed.")
-    print("\nAnalyze text with hallmark:")
-    print(analyze_text("BIS 916 HUID 9A2F8K CM/L-1234567 R-41001234"))
-    print("\nSupported marks:", get_supported_marks())
-    print("\nDISCLAIMER:", DISCLAIMER)
+    print("Testing api/marks.py...")
+    # Test 1: HUID
+    res_huid = verify_mark("916A1B")
+    print(f"HUID 916A1B -> Valid: {res_huid['valid']} ({res_huid['mark_type']})")
+    assert res_huid["valid"] == True
+
+    # Test 2: Invalid HUID
+    res_bad = verify_mark("12345")
+    print(f"Invalid '12345' -> Valid: {res_bad['valid']}")
+    assert res_bad["valid"] == False
+
+    # Test 3: ISI
+    res_isi = verify_mark("CM/L-1234567")
+    print(f"ISI CM/L-1234567 -> Valid: {res_isi['valid']} ({res_isi['mark_type']})")
+    assert res_isi["valid"] == True
+
+    # Test 4: CRS
+    res_crs = verify_mark("R-41000001")
+    print(f"CRS R-41000001 -> Valid: {res_crs['valid']} ({res_crs['mark_type']})")
+    assert res_crs["valid"] == True
+
+    print("api/marks.py self-test passed successfully!")
