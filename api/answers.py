@@ -395,7 +395,7 @@ def _call_gemini_llm(prompt: str, api_key: str) -> Optional[str]:
 def _call_groq_llm(prompt: str, api_key: str) -> Optional[str]:
     """Calls Groq API (e.g. LLaMA-3.3-70b) for fast, detailed grounded generation."""
     try:
-        model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+        model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {

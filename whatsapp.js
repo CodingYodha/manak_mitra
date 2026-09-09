@@ -17,38 +17,67 @@ const {
 } = require("@whiskeysockets/baileys");
 const qrcode = require("qrcode-terminal");
 
+const fs = require("fs");
+const path = require("path");
 const pino = require("pino");
+
+// Zero-dependency .env loader
+function loadEnv() {
+  const envPath = path.resolve(__dirname, ".env");
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, "utf-8").split("\n");
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx !== -1) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim();
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+}
+loadEnv();
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 
 const SYSTEM_PROMPT = `You are Manak Mitra (मानक मित्र), the official AI Compliance Assistant for Bureau of Indian Standards (BIS), Ministry of Consumer Affairs, Government of India.
 
-Your capabilities:
-1. Quality Control Orders (QCOs): Confirm if products (LED bulbs, toys, steel, helmets, gold, cement, etc.) need mandatory BIS certification.
-2. Indian Standards (IS): Identify applicable standards (e.g. IS 16102 for LED bulbs, IS 9873 for toys, IS 1417 for gold).
-3. BIS Testing Laboratories: Search across 340+ accredited test facilities and 6 Apex Testing Hubs across India.
-4. Certification Schemes & Fees: Guide manufacturers on ISI Mark Scheme-I, CRS, FMCS, and Hallmarking processes.
-5. Consumer Mark Verification: Validate 6-digit HUID gold hallmarks and CM/L license numbers.
+Your core domain is Indian Standards (IS), Quality Control Orders (QCOs), testing laboratories (340+ across India and 6 Apex Testing Hubs), certification schemes (ISI Mark, CRS, FMCS), and Hallmarking (HUID).
 
-Task:
-Determine if the user query is:
-A) CASUAL: Greeting, pleasantry, identity question ("who are you", "what can you do"), gratitude ("thanks"), or general casual chat (e.g., "hi", "hii", "hello", "hey", "namaste", "good morning", "how are you", "help").
-B) COMPLIANCE: A specific compliance, product, standard, testing lab, license, or technical question.
+TASK:
+Analyze the user message and perform one of the following actions:
 
-If CASUAL:
-Generate a warm, friendly, concise, and helpful response in the user's language (English or Hindi).
-Introduce yourself as Manak Mitra (मानक मित्र), the official BIS Assistant, and briefly summarize how you can help them with standards, QCOs, labs, and certification. Do NOT cite standard numbers or include citations.
+1. IF GIBBERISH / NONSENSE / RANDOM CHARACTERS / OUT-OF-CONTEXT NUMBERS (e.g., 'asdkjhasd', '123891723', 'qwerty', '???', random keystrokes):
+   Do NOT pass this to the standards engine. Respond politely and gently:
+   - State that you did not understand or catch the query.
+   - Clarify that you are Manak Mitra, the official BIS AI Assistant.
+   - Ask if they are looking for information on a specific product, an Indian Standard (IS), a mandatory Quality Control Order (QCO), or a testing laboratory.
 
-If COMPLIANCE:
-Return the exact keyword: [COMPLIANCE_QUERY]`;
+2. IF CASUAL / GREETING / CHIT-CHAT / IDENTITY / GRATITUDE (e.g., 'hi', 'hii', 'hello', 'namaste', 'who are you', 'how are you', 'what can you do', 'thanks'):
+   Do NOT cite standard numbers. Do NOT pass to the standards engine. Respond warmly, casually, and informatively:
+   - Introduce yourself as Manak Mitra (मानक मित्र), the official BIS AI Compliance Assistant.
+   - Informatively explain your key capabilities (Mandatory QCOs, 23,500+ Indian Standards, 340+ testing labs, ISI/CRS/FMCS certification processes, and HUID hallmark verification).
+   - Invite them to ask about any product, standard, or compliance requirement.
+   - Respond in the language of the user (Hindi for Hindi/Hinglish, English for English). Use clean WhatsApp formatting (bolding with *...*).
+
+3. IF COMPLIANCE / TECHNICAL / REGULATORY QUERY (e.g., 'Is BIS mandatory for 9W LED bulb?', 'IS 16102', 'gold hallmarking', 'testing lab in Delhi', 'how to get ISI mark', or any question asking about specific goods, standards, certification, or laboratories):
+   Respond with ONLY the exact keyword token: [COMPLIANCE_QUERY]`;
 
 async function classifyAndReplyCasual(query) {
   const ql = query.toLowerCase().trim();
   const isHindi = /[\u0900-\u097F]/.test(query);
 
-  // 1. Try Cloud LLM (Groq / Gemini) if API keys are available
+  // 1. Primary: LLM Gatekeeper via Groq API
   if (process.env.GROQ_API_KEY) {
     try {
+      const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+
       const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -56,15 +85,19 @@ async function classifyAndReplyCasual(query) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "llama-3.1-8b-instant",
+          model: model,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: query }
           ],
-          temperature: 0.3,
-          max_tokens: 250
-        })
+          temperature: 0.1,
+          max_tokens: 300
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
+
       if (resp.ok) {
         const data = await resp.json();
         const content = data.choices?.[0]?.message?.content?.trim() || "";
@@ -74,25 +107,23 @@ async function classifyAndReplyCasual(query) {
         return content;
       }
     } catch (e) {
-      console.warn("[WhatsApp AI] Groq classification failed, using built-in classifier:", e.message);
+      console.warn("[WhatsApp AI] LLM classification error, using fallback classifier:", e.message);
     }
   }
 
-  // 2. High-Fidelity Built-in Conversational Classification Engine
+  // 2. High-Fidelity Fallback Classifier
   const greetingPattern = /^\s*(hi|hello|hey|hii+|heyy+|namaste|नमस्ते|नमस्कार|सुप्रभात|halo|hoi|yo)(\s+|$|[!.,?])/i;
   const identityPattern = /^\s*(who are you|who is manak mitra|what is manak mitra|what are you|what can you do|help|commands|features|options|tell me about yourself|about you|आप कौन हैं|क्या कर सकते हैं)(\s+|$|[!.,?])/i;
   const gratitudePattern = /^\s*(thanks|thank you|thx|धन्यवाद|शुक्रिया)(\s+|$|[!.,?])/i;
   const pleasantryPattern = /^\s*(how are you|kaise ho|kya haal|good morning|good evening|good afternoon)(\s+|$|[!.,?])/i;
 
-  if (greetingPattern.test(ql) || identityPattern.test(ql) || pleasantryPattern.test(ql) || ql.length <= 4) {
-    // If it's not mentioning a known product or standard
-    const hasProduct = /(led|bulb|toy|gold|cement|steel|helmet|cable|wire|battery|water|lab|huid|qco|isi|crs|fmcs|is\s*\d+)/i.test(ql);
-    if (!hasProduct) {
-      if (isHindi) {
-        return "नमस्ते! 🙏 मैं *मानक मित्र (Manak Mitra)* हूँ — भारतीय मानक ब्यूरो (BIS) का आधिकारिक AI अनुपालन सहायक।\n\nमैं आपकी इन विषयों में सहायता कर सकता हूँ:\n• *अनिवार्य QCOs*: जांचें कि क्या आपके उत्पाद पर सरकारी गुणवत्ता नियंत्रण आदेश लागू है\n• *भारतीय मानक*: 23,500+ भारतीय मानक (IS Numbers जैसे LED के लिए IS 16102)\n• *परीक्षण प्रयोगशालाएं*: देश भर की 340+ मान्यता प्राप्त लैब्स खोजें\n• *प्रमाणीकरण योजनाएं*: ISI मार्क, CRS, FMCS प्रक्रियाएं एवं सरकारी शुल्क\n• *हॉलमार्क सत्यापन*: 6-अंकीय HUID एवं CM/L लाइसेंस जांच\n\nआज मैं आपकी क्या सहायता कर सकता हूँ?";
-      }
-      return "Namaste! 🙏 I am *Manak Mitra (मानक मित्र)*, your official AI Compliance Assistant for the Bureau of Indian Standards (BIS), Government of India.\n\nHere is how I can assist you:\n• *Mandatory QCOs*: Check if your product requires compulsory BIS certification\n• *Indian Standards*: Find verified Indian Standards (e.g., IS 16102 for LED bulbs, IS 9873 for toys)\n• *Testing Labs*: Locate accredited testing facilities across 340+ laboratories in India\n• *Certification Schemes*: Step-by-step guidance on ISI Mark, CRS, and FMCS fees & procedures\n• *Mark Verification*: Validate 6-digit HUID gold hallmarks and CM/L license numbers\n\nHow can I help with your compliance today?";
+  const hasProduct = /(led|bulb|toy|gold|cement|steel|helmet|cable|wire|battery|water|lab|huid|qco|isi|crs|fmcs|is\s*\d+)/i.test(ql);
+
+  if (!hasProduct && (greetingPattern.test(ql) || identityPattern.test(ql) || pleasantryPattern.test(ql) || ql.length <= 4)) {
+    if (isHindi) {
+      return "नमस्ते! 🙏 मैं *मानक मित्र (Manak Mitra)* हूँ — भारतीय मानक ब्यूरो (BIS) का आधिकारिक AI अनुपालन सहायक।\n\nमैं आपकी इन विषयों में सहायता कर सकता हूँ:\n• *अनिवार्य QCOs*: जांचें कि क्या आपके उत्पाद पर सरकारी गुणवत्ता नियंत्रण आदेश लागू है\n• *भारतीय मानक*: 23,500+ भारतीय मानक (IS Numbers जैसे LED के लिए IS 16102)\n• *परीक्षण प्रयोगशालाएं*: देश भर की 340+ मान्यता प्राप्त लैब्स खोजें\n• *प्रमाणीकरण योजनाएं*: ISI मार्क, CRS, FMCS प्रक्रियाएं एवं सरकारी शुल्क\n• *हॉलमार्क सत्यापन*: 6-अंकीय HUID एवं CM/L लाइसेंस जांच\n\nआज मैं आपकी क्या सहायता कर सकता हूँ?";
     }
+    return "Namaste! 🙏 I am *Manak Mitra (मानक मित्र)*, your official AI Compliance Assistant for the Bureau of Indian Standards (BIS), Government of India.\n\nHere is how I can assist you:\n• *Mandatory QCOs*: Check if your product requires compulsory BIS certification\n• *Indian Standards*: Find verified Indian Standards (e.g., IS 16102 for LED bulbs, IS 9873 for toys)\n• *Testing Labs*: Locate accredited testing facilities across 340+ laboratories in India\n• *Certification Schemes*: Step-by-step guidance on ISI Mark, CRS, and FMCS fees & procedures\n• *Mark Verification*: Validate 6-digit HUID gold hallmarks and CM/L license numbers\n\nHow can I help with your compliance today?";
   }
 
   if (gratitudePattern.test(ql)) {
@@ -100,6 +131,11 @@ async function classifyAndReplyCasual(query) {
       return "आपका बहुत-बहुत धन्यवाद! 🙏 यदि आपके पास भारतीय मानकों (BIS), प्रयोगशालाओं या प्रमाणन से संबंधित कोई अन्य प्रश्न है, तो बेझिझक पूछें।";
     }
     return "You're very welcome! 🙏 Always glad to assist with official BIS standards and compliance. Let me know if you need to check any other product or laboratory!";
+  }
+
+  // Heuristic for gibberish / nonsense if LLM is offline
+  if (/^[a-z0-9\W_]{1,15}$/i.test(ql) && !hasProduct && !/^[a-z]{3,}\s+[a-z]{3,}/i.test(ql)) {
+    return "I'm sorry, I didn't quite catch that. I am *Manak Mitra (मानक मित्र)*, your official BIS AI Assistant. Are you looking for information on an Indian Standard (IS), mandatory Quality Control Order (QCO), or a testing laboratory?";
   }
 
   return null; // Route to RAG backend for standards retrieval
@@ -222,5 +258,13 @@ async function startWhatsAppBot() {
   });
 }
 
-// Start bot
-startWhatsAppBot().catch((err) => console.error("[WhatsApp] Startup error:", err));
+// Start bot if executed directly
+if (require.main === module) {
+  startWhatsAppBot().catch((err) => console.error("[WhatsApp] Startup error:", err));
+}
+
+module.exports = {
+  classifyAndReplyCasual,
+  SYSTEM_PROMPT,
+  startWhatsAppBot
+};

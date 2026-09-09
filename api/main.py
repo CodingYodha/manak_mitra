@@ -4,7 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from api import answers, guard, store, marks, lang as lang_utils
 from typing import Optional
 import datetime
+import os
 import re
+import httpx
 
 app = FastAPI(title="Manak Mitra API", description="AI Assistant for Bureau of Indian Standards (BIS)", version="2.0")
 
@@ -66,6 +68,91 @@ def on_startup():
         print(f"[main] Graph load skipped: {e}")
 
 
+GATEKEEPER_PROMPT = """You are Manak Mitra (मानक मित्र), the official AI Compliance Assistant for Bureau of Indian Standards (BIS), Ministry of Consumer Affairs, Government of India.
+
+Your core domain is Indian Standards (IS), Quality Control Orders (QCOs), testing laboratories (340+ across India and 6 Apex Testing Hubs), certification schemes (ISI Mark, CRS, FMCS), and Hallmarking (HUID).
+
+TASK:
+Analyze the user message and perform one of the following actions:
+
+1. IF GIBBERISH / NONSENSE / RANDOM CHARACTERS / OUT-OF-CONTEXT NUMBERS (e.g., 'asdkjhasd', '123891723', 'qwerty', '???', random keystrokes):
+   Do NOT pass this to the standards engine. Respond politely and gently:
+   - State that you did not understand or catch the query.
+   - Clarify that you are Manak Mitra, the official BIS AI Assistant.
+   - Ask if they are looking for information on a specific product, an Indian Standard (IS), a mandatory Quality Control Order (QCO), or a testing laboratory.
+
+2. IF CASUAL / GREETING / CHIT-CHAT / IDENTITY / GRATITUDE (e.g., 'hi', 'hii', 'hello', 'namaste', 'who are you', 'how are you', 'what can you do', 'thanks'):
+   Do NOT cite standard numbers. Do NOT pass to the standards engine. Respond warmly, casually, and informatively:
+   - Introduce yourself as Manak Mitra (मानक मित्र), the official BIS AI Compliance Assistant.
+   - Informatively explain your key capabilities (Mandatory QCOs, 23,500+ Indian Standards, 340+ testing labs, ISI/CRS/FMCS certification processes, and HUID hallmark verification).
+   - Invite them to ask about any product, standard, or compliance requirement.
+   - Respond in the language of the user (Hindi for Hindi/Hinglish, English for English).
+
+3. IF COMPLIANCE / TECHNICAL / REGULATORY QUERY (e.g., 'Is BIS mandatory for 9W LED bulb?', 'IS 16102', 'gold hallmarking', 'testing lab in Delhi', 'how to get ISI mark', or any question asking about specific goods, standards, certification, or laboratories):
+   Respond with ONLY the exact keyword token: [COMPLIANCE_QUERY]"""
+
+
+def classify_gatekeeper(q: str, is_hi: bool = False) -> Optional[str]:
+    """
+    Evaluates queries via LLM before semantic retrieval.
+    Returns direct string reply for casual/gibberish queries, or None to pass to RAG backend.
+    """
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        try:
+            model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+            headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": GATEKEEPER_PROMPT},
+                    {"role": "user", "content": q}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 300
+            }
+            with httpx.Client(timeout=4.0) as client:
+                resp = client.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
+                if resp.status_code == 200:
+                    content = resp.json()["choices"][0]["message"]["content"].strip()
+                    if "[COMPLIANCE_QUERY]" in content:
+                        return None
+                    return content
+        except Exception:
+            pass
+
+    # Heuristic fallback if LLM is unreachable
+    ql = q.lower().strip()
+    has_product = bool(re.search(r"(led|bulb|toy|gold|cement|steel|helmet|cable|wire|battery|water|lab|huid|qco|isi|crs|fmcs|is\s*\d+)", ql))
+    if not has_product:
+        if re.search(r"^\s*(hi|hello|hey|hii+|heyy+|namaste|नमस्ते|नमस्कार|सुप्रभात|who are you|what can you do|help|thanks|thank you)\b", ql) or len(ql) <= 4:
+            if is_hi:
+                return (
+                    "नमस्ते! 🙏 मैं *मानक मित्र (Manak Mitra)* हूँ — भारतीय मानक ब्यूरो (BIS) का आधिकारिक AI अनुपालन सहायक।\n\n"
+                    "मैं आपकी इन विषयों में सहायता कर सकता हूँ:\n"
+                    "• *अनिवार्य QCOs*: जांचें कि क्या आपके उत्पाद पर सरकारी गुणवत्ता नियंत्रण आदेश लागू है\n"
+                    "• *भारतीय मानक*: 23,500+ भारतीय मानक\n"
+                    "• *परीक्षण प्रयोगशालाएं*: देश भर की 340+ मान्यता प्राप्त लैब्स खोजें\n"
+                    "• *प्रमाणीकरण योजनाएं*: ISI मार्क, CRS, FMCS प्रक्रियाएं\n"
+                    "• *हॉलमार्क सत्यापन*: 6-अंकीय HUID एवं CM/L लाइसेंस जांच\n\n"
+                    "आज मैं आपकी क्या सहायता कर सकता हूँ?"
+                )
+            return (
+                "Namaste! 🙏 I am Manak Mitra, your official AI Compliance Assistant for the Bureau of Indian Standards (BIS), Government of India.\n\n"
+                "Here is what I can assist you with:\n"
+                "• Mandatory Quality Control Orders (QCOs)\n"
+                "• Indian Standards (IS Numbers, e.g. IS 16102 for LED bulbs)\n"
+                "• Finding nearest accredited testing laboratories across 340+ facilities\n"
+                "• Certification schemes & fees (ISI Mark, CRS, FMCS, Hallmarking)\n"
+                "• Validating 6-digit HUID gold hallmarks & CM/L licenses\n\n"
+                "How can I help with your compliance today?"
+            )
+        if re.match(r"^[a-z0-9\W_]{1,15}$", ql) and not re.search(r"[a-z]{3,}\s+[a-z]{3,}", ql):
+            return "I'm sorry, I didn't quite catch that. I am Manak Mitra, your official BIS AI Assistant. Are you looking for information on an Indian Standard (IS), mandatory Quality Control Order (QCO), or a testing laboratory?"
+
+    return None
+
+
 @app.post("/chat")
 def chat(q: str, lang: str = "en", channel: str = "web"):
     is_hi = lang_utils.is_hindi(q) or lang == "hi"
@@ -77,7 +164,23 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
     intent = route(query_en)
     city = extract_city(query_en) or extract_city(q)
 
-    # ── 0. Greeting / Conversational Intent ──────────────────────────────────
+    # ── 0. AI Gatekeeper (Casual / Gibberish / Pleasantry Interceptor) ────────
+    if intent in ("greeting", "recommend"):
+        gatekeeper_reply = classify_gatekeeper(q, is_hi=is_hi)
+        if gatekeeper_reply:
+            store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
+                      intent="conversational", matched_is=None, top_score=1.0, abstained=0)
+            return {
+                "answer": gatekeeper_reply,
+                "intent": "conversational",
+                "abstained": False,
+                "citations": [],
+                "highlight_nodes": [],
+                "verification": None,
+                "passport_url": ""
+            }
+
+    # ── 0b. Greeting Fallback ────────────────────────────────────────────────
     if intent == "greeting":
         if is_hi:
             greeting_text = (
