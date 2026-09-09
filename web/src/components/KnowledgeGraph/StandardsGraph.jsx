@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
-import { Share2, Search, ExternalLink, Info, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Link2, MapPin, Layers, Building2, PackageCheck, Sparkles, Network, Zap } from 'lucide-react';
+import ForceGraph3D from 'react-force-graph-3d';
+import { Share2, Search, ExternalLink, Info, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Link2, MapPin, Layers, Building2, PackageCheck, Sparkles, Box } from 'lucide-react';
 
 const ICS_CATEGORIES = [
   { code: 'ALL', label: 'All Clusters (23,573 Standards)' },
@@ -64,11 +64,11 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     return () => observer.disconnect();
   }, []);
 
-  // Instant Load from Pre-computed Fast Layout
+  // Instant Load from Pre-computed 3D Fast Layout
   useEffect(() => {
     setLoading(true);
 
-    fetch('/graph_fast.json')
+    fetch('/graph_3d.json')
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -87,11 +87,13 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             purchase_url: n.purchase_url || '',
             notification_url: n.notification_url || '',
             source_url: n.source_url || '',
-            // Pre-computed layout positions for zero calculation lag
+            // Pre-computed 3D positions for zero calculation lag
             x: n.x,
             y: n.y,
-            fx: n.x,
-            fy: n.y
+            z: n.z,
+            fx: n.fx,
+            fy: n.fy,
+            fz: n.fz
           }));
 
           const links = (data.links || []).map((l) => ({
@@ -112,12 +114,12 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
         }
       })
       .catch((err) => {
-        console.error('Failed to load pre-computed graph layout, trying fallback /graph.json:', err);
-        return fetch('/graph.json')
+        console.error('Failed to load 3D graph layout, trying fallback /graph_fast.json:', err);
+        return fetch('/graph_fast.json')
           .then((res) => res.json())
-          .then((fallbackData) => {
-            if (fallbackData.nodes && fallbackData.nodes.length > 0) {
-              const nodes = fallbackData.nodes.map((n) => ({
+          .then((data) => {
+            if (data.nodes && data.nodes.length > 0) {
+              const nodes = data.nodes.map((n) => ({
                 id: n.id,
                 label: n.label || n.title || n.id,
                 type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : n.id.startsWith('qco:') ? 'qco' : 'standard'),
@@ -128,9 +130,15 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                 state: n.state || '',
                 purchase_url: n.purchase_url || '',
                 notification_url: n.notification_url || '',
-                source_url: n.source_url || ''
+                source_url: n.source_url || '',
+                x: n.x,
+                y: n.y,
+                z: n.z || 0,
+                fx: n.x,
+                fy: n.y,
+                fz: n.z || 0
               }));
-              const links = (fallbackData.links || []).map((l) => ({
+              const links = (data.links || []).map((l) => ({
                 source: typeof l.source === 'object' ? l.source.id : l.source,
                 target: typeof l.target === 'object' ? l.target.id : l.target,
                 rel: l.rel || 'links_to'
@@ -194,7 +202,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     return neighbors;
   }, [selectedNode, graphData]);
 
-  // Select node and highlight its connected 1-hop subgraph
+  // Select node and highlight its connected 1-hop subgraph in 3D
   const selectNode = useCallback((node, dataOverride = null) => {
     if (!node) return;
     const currentData = dataOverride || graphData;
@@ -226,8 +234,14 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     }
 
     if (fgRef.current && node.x !== undefined && node.y !== undefined) {
-      fgRef.current.centerAt(node.x, node.y, 600);
-      fgRef.current.zoom(2.0, 600);
+      const distance = 80;
+      const hyp = Math.hypot(node.x, node.y, node.z || 0) || 1;
+      const distRatio = 1 + distance / hyp;
+      fgRef.current.cameraPosition(
+        { x: node.x * distRatio, y: node.y * distRatio, z: (node.z || 0) * distRatio + 30 },
+        node,
+        800
+      );
     }
   }, [graphData, onSelectStandard]);
 
@@ -253,12 +267,17 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     if (fgRef.current && sourceNode && targetNode && sourceNode.x !== undefined && targetNode.x !== undefined) {
       const midX = (sourceNode.x + targetNode.x) / 2;
       const midY = (sourceNode.y + targetNode.y) / 2;
-      fgRef.current.centerAt(midX, midY, 600);
-      fgRef.current.zoom(2.2, 600);
+      const midZ = ((sourceNode.z || 0) + (targetNode.z || 0)) / 2;
+
+      fgRef.current.cameraPosition(
+        { x: midX + 50, y: midY + 50, z: midZ + 70 },
+        { x: midX, y: midY, z: midZ },
+        800
+      );
     }
   }, [graphData]);
 
-  // Reset to full graph view
+  // Reset to full 3D graph view
   const handleReset = useCallback(() => {
     setSearchQuery('');
     setSelectedGroup('ALL');
@@ -268,13 +287,23 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     setHighlightLinkIds(new Set());
 
     if (fgRef.current) {
-      fgRef.current.centerAt(0, 0, 700);
-      fgRef.current.zoomToFit(700, 40);
+      fgRef.current.cameraPosition({ x: 0, y: 0, z: 500 }, { x: 0, y: 0, z: 0 }, 800);
     }
   }, []);
 
-  const handleZoomIn = () => fgRef.current && fgRef.current.zoom(fgRef.current.zoom() * 1.3, 300);
-  const handleZoomOut = () => fgRef.current && fgRef.current.zoom(fgRef.current.zoom() / 1.3, 300);
+  const handleZoomIn = () => {
+    if (fgRef.current) {
+      const currentPos = fgRef.current.camera().position;
+      fgRef.current.cameraPosition({ x: currentPos.x * 0.75, y: currentPos.y * 0.75, z: currentPos.z * 0.75 }, undefined, 300);
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (fgRef.current) {
+      const currentPos = fgRef.current.camera().position;
+      fgRef.current.cameraPosition({ x: currentPos.x * 1.35, y: currentPos.y * 1.35, z: currentPos.z * 1.35 }, undefined, 300);
+    }
+  };
 
   return (
     <div style={{ padding: '24px 32px 60px', width: '100%', boxSizing: 'border-box' }}>
@@ -283,11 +312,11 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
           <div>
             <h2 className="title-md" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-              <Zap size={20} color="#3b82f6" />
-              Fast Hardware-Accelerated BIS Knowledge Graph
+              <Box size={20} color="#3b82f6" />
+              3D Interactive BIS Knowledge Graph Universe
             </h2>
             <p className="caption" style={{ marginTop: '4px' }}>
-              Instant &lt;50ms load time with pre-computed spatial coordinates: 4,470 connected nodes &amp; 8,611 relationships at 60 FPS.
+              Pure 3D Spatial Visualization (60 FPS): Left Drag to Rotate 360° • Right Drag to Pan • Click any sphere to focus.
             </p>
           </div>
 
@@ -323,21 +352,21 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', fontSize: '11.5px', color: '#64748b', flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ padding: '3px 9px', background: '#eff6ff', color: '#1e40af', borderRadius: '4px', fontWeight: 600 }}>
-              {graphStats.rendered_nodes?.toLocaleString()} Active Entities
+              {graphStats.rendered_nodes?.toLocaleString()} Active 3D Spheres
             </span>
             <span>•</span>
             <span style={{ padding: '3px 9px', background: '#f0fdf4', color: '#166534', borderRadius: '4px', fontWeight: 600 }}>
-              {graphStats.rendered_edges?.toLocaleString()} Relationships
+              {graphStats.rendered_edges?.toLocaleString()} Spatial Connections
             </span>
             <span style={{ padding: '3px 9px', background: '#fef3c7', color: '#92400e', borderRadius: '4px', fontWeight: 600 }}>
-              ⚡ Instant Load (0ms Simulation)
+              ⚡ Silky Smooth 60 FPS
             </span>
             {highlightNodeIds.size > 0 && (
               <span style={{ padding: '3px 9px', background: '#fef3c7', color: '#92400e', borderRadius: '4px', fontWeight: 600 }}>
                 Focus: {highlightNodeIds.size} Highlighted Entities
               </span>
             )}
-            {loading && <span style={{ color: '#2563eb', fontWeight: 500 }}>Loading graph...</span>}
+            {loading && <span style={{ color: '#2563eb', fontWeight: 500 }}>Initializing 3D universe...</span>}
           </div>
 
           <button
@@ -358,11 +387,11 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             }}
           >
             <RotateCcw size={13} />
-            Reset View to Full Graph
+            Reset 3D Camera View
           </button>
         </div>
 
-        {/* 1. Full-Width Knowledge Graph Canvas (Expanded across the full section) */}
+        {/* 1. Full-Width 3D Knowledge Graph Canvas (Expanded across the full section) */}
         <div
           ref={containerRef}
           style={{
@@ -385,7 +414,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             <button onClick={handleZoomOut} title="Zoom Out" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ZoomOut size={17} />
             </button>
-            <button onClick={handleReset} title="Reset to Full Graph" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button onClick={handleReset} title="Reset to Full Universe" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <RotateCcw size={17} />
             </button>
           </div>
@@ -399,8 +428,13 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.qco }}></span> QCO Order</span>
           </div>
 
+          {/* 3D Navigation Hint */}
+          <div style={{ position: 'absolute', bottom: '16px', left: '16px', zIndex: 10, background: 'rgba(7, 11, 20, 0.85)', backdropFilter: 'blur(4px)', padding: '6px 12px', borderRadius: '6px', border: '1px solid #334155', fontSize: '10.5px', color: '#94a3b8' }}>
+            Left Drag: Rotate 360° • Right Drag: Pan • Scroll: Zoom • Click: Focus
+          </div>
+
           {filteredData.nodes.length > 0 && (
-            <ForceGraph2D
+            <ForceGraph3D
               ref={fgRef}
               width={dimensions.width}
               height={dimensions.height}
@@ -410,35 +444,36 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                 const isSelected = selectedNode && selectedNode.id === n.id;
                 if (isSelected) return '#ffffff';
                 if (highlightNodeIds.size > 0 && !highlightNodeIds.has(n.id)) {
-                  return '#1e293b';
+                  return 'rgba(30, 41, 59, 0.25)'; // Dim non-selected nodes
                 }
                 return NODE_COLORS[n.type] || '#94a3b8';
               }}
-              nodeRelSize={5}
+              nodeRelSize={4.5}
               nodeVal={(n) => {
                 const isSelected = selectedNode && selectedNode.id === n.id;
-                if (isSelected) return 18;
-                if (highlightNodeIds.has(n.id)) return 12;
-                return n.type === 'ics' ? 10 : n.type === 'standard' ? 7 : 5;
+                if (isSelected) return 15;
+                if (highlightNodeIds.has(n.id)) return 10;
+                return n.type === 'ics' ? 8 : n.type === 'standard' ? 5 : 4;
               }}
+              nodeResolution={8}
               linkColor={(l) => {
                 const lId = getLinkId(l);
-                if (highlightLinkIds.has(lId)) return '#60a5fa';
-                if (highlightLinkIds.size > 0) return 'rgba(30, 41, 59, 0.12)';
-                return 'rgba(71, 85, 105, 0.5)';
+                if (highlightLinkIds.has(lId)) return '#60a5fa'; // Bright glowing blue
+                if (highlightLinkIds.size > 0) return 'rgba(30, 41, 59, 0.08)';
+                return 'rgba(71, 85, 105, 0.4)';
               }}
-              linkWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 2.5 : 1.0)}
-              linkDirectionalArrowLength={(l) => (highlightLinkIds.has(getLinkId(l)) ? 4.5 : 3.0)}
-              linkDirectionalArrowRelPos={1}
-              linkCurvature={0.08}
+              linkWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 2.5 : 0.6)}
               linkDirectionalParticles={(l) => (highlightLinkIds.has(getLinkId(l)) ? 3 : 0)}
-              linkDirectionalParticleSpeed={0.006}
-              linkDirectionalParticleWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 3 : 1)}
+              linkDirectionalParticleSpeed={0.007}
+              linkDirectionalParticleWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 2.5 : 0)}
+              linkCurvature={0}
               onNodeClick={selectNode}
               onLinkClick={selectLink}
+              backgroundColor="#070b14"
+              showNavInfo={false}
               warmupTicks={0}
               cooldownTicks={0}
-              enableNodeDrag={true}
+              enableNodeDrag={false}
             />
           )}
         </div>
@@ -761,14 +796,14 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', marginBottom: '20px' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: '#2563eb', fontWeight: 800, letterSpacing: '0.05em' }}>
-                  <Network size={14} color="#2563eb" />
-                  GRAPH OVERVIEW
+                  <Box size={14} color="#2563eb" />
+                  3D GRAPH UNIVERSE OVERVIEW
                 </div>
                 <h3 style={{ fontSize: '20px', color: '#0f172a', marginTop: '6px', marginBottom: '4px', fontWeight: 700 }}>
                   BIS Standards &amp; Lab Knowledge Graph
                 </h3>
                 <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-                  Pre-computed layout with zero loading lag. Click any node in the canvas to zoom in and inspect certification pathways.
+                  Pre-computed 3D spatial coordinates for smooth 60 FPS rotation and exploration with zero overlapping.
                 </p>
               </div>
 
@@ -790,7 +825,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                 }}
               >
                 <Sparkles size={14} color="#60a5fa" />
-                Fit Entire Network View
+                Explore Entire 3D Network
               </button>
             </div>
 
