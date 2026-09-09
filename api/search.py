@@ -186,6 +186,19 @@ def find(query: str, k: int = 5, ics_prefix: Optional[str] = None) -> list[dict]
     return results
 
 
+def find_clustered(query: str, k: int = 5, ics_prefix: Optional[str] = None) -> list[dict]:
+    """
+    Rerank hits that share an ICS ancestor/prefix with the top result,
+    boosting cluster-coherent answers.
+    """
+    hits = find(query, k=k * 2, ics_prefix=ics_prefix)
+    if not hits:
+        return hits
+    top_ics = (hits[0].get("ics_code") or "")[:2]
+    hits.sort(key=lambda h: 0 if (h.get("ics_code") or "")[:2] == top_ics else 1)
+    return hits[:k]
+
+
 def index_loaded() -> bool:
     """Returns True if the vector index is available."""
     return _MODEL is not None

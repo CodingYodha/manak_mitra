@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import Navbar from './components/Navbar';
+import React, { useState, useEffect } from 'react';
+import Sidebar from './components/Sidebar';
 import Hero from './components/Hero';
 import ChatAssistant from './components/Chat/ChatAssistant';
 import StandardsGraph from './components/KnowledgeGraph/StandardsGraph';
@@ -19,12 +19,87 @@ import {
   ExternalLink,
   ArrowRight,
   Sparkles,
-  PhoneCall
+  PhoneCall,
+  ChevronsRight
 } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('assistant');
   const [focusedStandard, setFocusedStandard] = useState(null);
+  const [initialAssistantQuery, setInitialAssistantQuery] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Ensure sidebar always defaults to open upon page refresh
+  useEffect(() => {
+    try {
+      localStorage.removeItem('manak_sidebar_open');
+    } catch {}
+  }, []);
+
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('manak_sidebar_width');
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (val >= 180 && val <= 520) return val;
+      }
+    } catch {}
+    return 270;
+  });
+
+  const [isResizing, setIsResizing] = useState(false);
+
+  // Dynamic edge resizing across window
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e) => {
+      const clientX = e.clientX;
+      const clamped = Math.max(180, Math.min(clientX, 520));
+      setSidebarWidth(clamped);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      try {
+        localStorage.setItem('manak_sidebar_width', String(sidebarWidth));
+      } catch {}
+    };
+
+    const handleTouchMove = (e) => {
+      if (e.touches && e.touches.length > 0) {
+        handleMouseMove({ clientX: e.touches[0].clientX });
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isResizing, sidebarWidth]);
+
+  const handleStartResize = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  const handleResetResize = () => {
+    setSidebarWidth(270);
+    try {
+      localStorage.setItem('manak_sidebar_width', '270');
+    } catch {}
+  };
+
+  const handleToggleSidebar = () => {
+    setIsSidebarOpen((prev) => !prev);
+  };
 
   const handleSelectStandard = (isNumber) => {
     setFocusedStandard(isNumber);
@@ -40,29 +115,73 @@ export default function App() {
   };
 
   return (
-    <div className="airtable-site">
-      {/* 1. TOP NAVIGATION BAR (No Auth Required) */}
-      <Navbar
+    <div
+      className={`airtable-site app-layout-with-sidebar ${
+        !isSidebarOpen ? 'sidebar-closed' : ''
+      } ${isResizing ? 'sidebar-resizing' : ''}`}
+    >
+      {/* 1. PERSISTENT FIXED SIDEBAR (Resizable & Collapsible) */}
+      <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenPassport={handleOpenPassport}
+        isOpen={isSidebarOpen}
+        onClose={handleToggleSidebar}
+        sidebarWidth={sidebarWidth}
+        isResizing={isResizing}
+        onStartResize={handleStartResize}
+        onResetResize={handleResetResize}
       />
 
-      {/* 2. TABBED MAIN VIEWS OR FULL EDITORIAL LANDING */}
-      {activeTab === 'assistant' && (
+      {/* Floating Expand Tab (>>) when sidebar is closed */}
+      {!isSidebarOpen && (
+        <button
+          className="sidebar-open-tab"
+          onClick={() => setIsSidebarOpen(true)}
+          title="Expand sidebar (Ctrl+B)"
+          aria-label="Expand sidebar"
+        >
+          <ChevronsRight size={18} />
+        </button>
+      )}
+
+      {/* 2. MAIN SCROLLABLE CONTENT AREA */}
+      <div
+        className="app-main-content"
+        style={{
+          marginLeft: isSidebarOpen ? `${sidebarWidth}px` : '0px',
+          width: isSidebarOpen ? `calc(100% - ${sidebarWidth}px)` : '100%'
+        }}
+      >
+        {/* TABBED MAIN VIEWS OR FULL EDITORIAL LANDING */}
+        {activeTab === 'assistant' && (
         <>
           {/* Hero Section */}
           <Hero
-            onStartChat={() => {
+            onStartChat={(query) => {
+              if (query) {
+                setInitialAssistantQuery(query);
+              }
               const el = document.getElementById('chat-core');
-              if (el) el.scrollIntoView({ behavior: 'smooth' });
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth' });
+                const chatBox = document.querySelector('.editorial-chat-box');
+                if (chatBox) {
+                  chatBox.classList.add('chat-box-highlight');
+                  setTimeout(() => chatBox.classList.remove('chat-box-highlight'), 1200);
+                }
+                setTimeout(() => {
+                  const inputEl = document.getElementById('assistant-chat-input');
+                  if (inputEl) inputEl.focus();
+                }, 350);
+              }
             }}
             onOpenPassport={handleOpenPassport}
             onOpenVerifier={handleOpenVerifier}
           />
 
           {/* Interactive AI Assistant Core */}
-          <section id="chat-core" className="section-rhythm" style={{ paddingTop: '40px', paddingBottom: '40px' }}>
+          <section id="chat-core" className="section-rhythm" style={{ paddingTop: '28px', paddingBottom: '36px' }}>
             <div className="container">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
                 <div>
@@ -84,6 +203,7 @@ export default function App() {
               <ChatAssistant
                 onSelectNode={handleSelectStandard}
                 onViewPassport={handleOpenPassport}
+                initialQuery={initialAssistantQuery}
               />
             </div>
           </section>
@@ -344,6 +464,7 @@ export default function App() {
 
       {/* 3. EDITORIAL FOOTER */}
       <Footer onNavigate={(tab) => setActiveTab(tab)} />
+      </div>
     </div>
   );
 }

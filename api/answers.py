@@ -157,10 +157,30 @@ def scheme(query_or_name: str) -> Dict[str, Any]:
     }
 
 
-def labs(city: Optional[str] = None, category: Optional[str] = None, is_number: Optional[str] = None) -> Dict[str, Any]:
+def labs(city: Optional[str] = None, category: Optional[str] = None,
+         is_number: Optional[str] = None,
+         product: Optional[str] = None) -> Dict[str, Any]:
     """
-    Lab lookup: finds nearest accredited BIS lab, matching by specific standard IS number or category.
+    Lab lookup: finds nearest accredited BIS lab, matching by specific standard IS number,
+    product, or category. Uses graph_queries for real graph traversal when available.
     """
+    # Try graph-based lab lookup first
+    try:
+        try:
+            from api import graph_queries as gq
+        except ImportError:
+            import graph_queries as gq  # type: ignore
+        effective_product = product or category
+        if effective_product and city:
+            return {"labs": gq.labs_near_for_product(effective_product, city), "citations": []}
+        elif effective_product:
+            return {"labs": gq.labs_for_product(effective_product)[:5], "citations": []}
+        elif city:
+            return {"labs": gq.labs_by_city(city), "citations": []}
+    except (ImportError, FileNotFoundError, AttributeError):
+        pass
+
+    # Fallback: plain DB lookup
     if not store:
         return {"labs": [], "citations": []}
 
@@ -168,8 +188,8 @@ def labs(city: Optional[str] = None, category: Optional[str] = None, is_number: 
     if is_number:
         results = store.get_labs_for_standard(is_number, city or "", limit=4)
 
-    if not results and (category or city):
-        results = store.get_nearest_labs(city or "", category or "", limit=4)
+    if not results and (category or city or product):
+        results = store.get_nearest_labs(city or "", category or product or "", limit=4)
 
     if not results:
         # General fall-back anchor labs
@@ -232,7 +252,21 @@ def passport(product: str) -> Dict[str, Any]:
 def graph(highlight: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Returns graph data for Knowledge Graph visualization.
+    Uses graph_queries.subgraph_json when available; falls back to standards list.
     """
+    try:
+        try:
+            from api import graph_queries as gq
+        except ImportError:
+            import graph_queries as gq  # type: ignore
+        center = f"std:{highlight[0]}" if highlight else None
+        data = gq.subgraph_json(center_node=center, hops=2)
+        data["highlight_nodes"] = highlight or []
+        return data
+    except (ImportError, FileNotFoundError, AttributeError):
+        pass
+
+    # Fallback: flat standards list
     if not store:
         return {"nodes": [], "links": [], "highlight_nodes": highlight or []}
 

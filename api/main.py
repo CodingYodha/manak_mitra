@@ -50,20 +50,30 @@ def extract_city(q: str) -> str:
 @app.on_event("startup")
 def on_startup():
     store.init()
+    # Pre-load graph into memory on startup (non-fatal if not built yet)
+    try:
+        from api import graph_store
+        if graph_store.is_ready():
+            graph_store.get()
+            print("[main] Knowledge graph loaded into memory")
+        else:
+            print("[main] graph.gpickle not found — run: python api/graph_build.py")
+    except Exception as e:
+        print(f"[main] Graph load skipped: {e}")
 
 
 @app.post("/chat")
 def chat(q: str, lang: str = "en", channel: str = "web"):
     intent = route(q)
     city = extract_city(q)
-    
+
     # ── 1. Consumer / Mark Verification ──────────────────────────────────────
     if intent == "consumer":
         # Extract potential code if present in query
         code_match = re.search(r"\b([0-9A-Z]{6}|CM/L[- ]?\d{7}|R[- ]?\d{8})\b", q, re.I)
         code = code_match.group(1) if code_match else q
         mark_res = marks.verify_mark(code)
-        
+
         citations = mark_res.get("citations", [])
         facts = {
             "mark_verification": mark_res,
@@ -71,11 +81,11 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
         }
         answer_text = mark_res.get("reason", "Mark verification complete.")
         refs = [c["ref"] for c in citations]
-        
+
         store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=lang,
                   intent=intent, matched_is=refs[0] if refs else None,
                   top_score=1.0, abstained=0)
-                  
+
         return {
             "answer": answer_text,
             "intent": intent,
@@ -131,6 +141,7 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
                     facts = rec
             else:
                 facts = rec
+
     else:
         facts = answers.recommend(q)
 
@@ -187,7 +198,7 @@ async def verify_mark_endpoint(
     if file:
         content = await file.read()
         return marks.extract_mark_from_image(content)
-    
+
     if code:
         return marks.verify_mark(code=code, mark_type=mark_type or "auto", purity=purity)
 
@@ -198,22 +209,74 @@ async def verify_mark_endpoint(
     }
 
 
+# ── Graph endpoints ───────────────────────────────────────────────────────────
 @app.get("/graph")
-def get_graph():
-    return answers.graph()
+def get_graph(highlight: str = "", full: bool = False):
+    try:
+        from api import graph_queries
+        center = f"std:{highlight}" if highlight else None
+        data = graph_queries.subgraph_json(center_node=center, full=full, connected_only=not full)
+        data["highlight_nodes"] = [highlight] if highlight else []
+        return data
+    except Exception:
+        nodes = [highlight] if highlight else None
+        return answers.graph(highlight=nodes)
 
 
+@app.get("/graph/lab/{lab_id}")
+def lab_detail(lab_id: str):
+    try:
+        from api import graph_queries
+        return graph_queries.lab_scope(lab_id)
+    except FileNotFoundError:
+        return {"error": "Graph not built yet. Run: python api/graph_build.py"}
+
+
+@app.get("/graph/related/{is_number:path}")
+def related(is_number: str):
+    try:
+        from api import graph_queries
+        return {"related": graph_queries.related_standards(is_number)}
+    except FileNotFoundError:
+        return {"error": "Graph not built yet."}
+
+
+@app.get("/graph/ics/{ics_code}")
+def ics_chain(ics_code: str):
+    try:
+        from api import graph_queries
+        return {"chain": graph_queries.ics_ancestors(ics_code)}
+    except FileNotFoundError:
+        return {"error": "Graph not built yet."}
+
+
+@app.get("/graph/product/{product:path}")
+def product_path(product: str):
+    try:
+        from api import graph_queries
+        return {"paths": graph_queries.product_to_lab_path(product)}
+    except FileNotFoundError:
+        return {"error": "Graph not built yet."}
+
+
+# ── Lab endpoints ─────────────────────────────────────────────────────────────
 @app.get("/labs/near")
-def get_labs(city: str = "", category: str = "", is_number: str = ""):
-    return answers.labs(city=city, category=category, is_number=is_number)
+def get_labs_near(product: str = "", city: str = "", category: str = "", is_number: str = ""):
+    return answers.labs(
+        product=product or None,
+        city=city or None,
+        category=category or None,
+        is_number=is_number or None
+    )
 
 
-@app.get("/api/passport/{product}")
+# ── Passport endpoints ────────────────────────────────────────────────────────
+@app.get("/api/passport/{product:path}")
 def api_passport(product: str):
     return answers.passport(product)
 
 
-@app.get("/passport/{product}")
+@app.get("/passport/{product:path}")
 def view_passport(product: str):
     data = answers.passport(product)
     html = f"""
