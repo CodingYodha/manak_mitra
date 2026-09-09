@@ -297,3 +297,39 @@ def view_passport(product: str):
 @app.get("/stats")
 def stats():
     return store.get_stats()
+
+
+# ── Web Search endpoint (Exa) ─────────────────────────────────────────────────
+@app.get("/search/web")
+def search_web(q: str, n: int = 3):
+    """
+    Direct Exa neural web search scoped to BIS-authoritative domains.
+    Returns live results from bis.gov.in, egazette.gov.in, standardsbis.in, etc.
+
+    Query params:
+        q  — search query (any language)
+        n  — number of results (default: 3, max: 10)
+    """
+    try:
+        from api import web_search as ws
+    except ImportError:
+        try:
+            import web_search as ws  # type: ignore
+        except ImportError:
+            return {"results": [], "error": "web_search module not available"}
+
+    import os
+    if not os.environ.get("EXA_API_KEY"):
+        return {
+            "results": [],
+            "warning": "EXA_API_KEY not set. Add it to .env to enable web search."
+        }
+
+    hits = ws.exa_search(q, num_results=min(n, 10))
+    return {
+        "query": q,
+        "results": hits,
+        "count": len(hits),
+        "source": "exa.ai"
+    }
+

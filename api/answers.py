@@ -8,6 +8,7 @@ Ownership:
   passport()           ← Rudra (Compliance Passport dossier generator)
   graph()              ← Rudra (Knowledge Graph generator)
   phrase()             ← Rudra (Multi-LLM Grounded Phrasing Engine: Gemini/Groq/Azure/Ollama/Fallback)
+  web_augment()        ← Rudra (Exa neural web search — live BIS/gazette results)
 """
 import json
 import logging
@@ -41,74 +42,112 @@ except ImportError:
         search = None  # type: ignore[assignment]
         store = None
 
+try:
+    from api import web_search as _ws
+except ImportError:
+    try:
+        import web_search as _ws  # type: ignore[assignment]
+    except ImportError:
+        _ws = None  # type: ignore[assignment]
+
+
+# ── Web Search Augmentation ───────────────────────────────────────────────────
+def web_augment(query: str, num_results: int = 3) -> Dict[str, Any]:
+    """
+    Calls Exa neural web search scoped to BIS-authoritative domains.
+    Returns web hits and their citations in Manak Mitra citation format.
+    Silently returns empty results if EXA_API_KEY is not set.
+    """
+    if _ws is None:
+        return {"web_hits": [], "citations": []}
+
+    hits = _ws.exa_search(query, num_results=num_results)
+    citations = _ws.web_citations(hits)
+    return {"web_hits": hits, "citations": citations}
+
 
 def recommend(description: str) -> Dict[str, Any]:
     """
     Standard recommendation / semantic search.
     Given a natural-language product description (any language),
     returns the top matching IS standards with citations.
+    Augments results with live Exa web search from BIS-authoritative sources.
     """
-    if search is None:
-        return {"hits": [], "citations": [], "_top_score": 0.0}
+    rag_hits: list = []
+    citations: list = []
+    top_score = 0.0
 
-    hits = search.find(description, k=5)
-    if not hits:
-        return {"hits": [], "citations": [], "_top_score": 0.0}
+    if search is not None:
+        rag_hits = search.find(description, k=5)
+        citations = [
+            {
+                "kind": "standard",
+                "ref": h["is_number"],
+                "title": h.get("title", ""),
+                "status": h.get("status", "ACTIVE"),
+                "is_free": h.get("is_free", False),
+                "purchase_url": h.get("purchase_url", ""),
+                "year": h.get("year", "")
+            }
+            for h in rag_hits
+        ]
+        if rag_hits:
+            top_score = rag_hits[0].get("dense_score", rag_hits[0]["score"])
 
-    citations = [
-        {
-            "kind": "standard",
-            "ref": h["is_number"],
-            "title": h.get("title", ""),
-            "status": h.get("status", "ACTIVE"),
-            "is_free": h.get("is_free", False),
-            "purchase_url": h.get("purchase_url", ""),
-            "year": h.get("year", "")
-        }
-        for h in hits
-    ]
+    # Augment with live Exa web search
+    web = web_augment(description)
+    citations.extend(web["citations"])
 
     return {
-        "hits": hits,
+        "hits": rag_hits,
+        "web_hits": web["web_hits"],
         "citations": citations,
-        "_top_score": hits[0].get("dense_score", hits[0]["score"]),
+        "_top_score": top_score if top_score > 0 else (1.0 if web["web_hits"] else 0.0),
     }
 
 
 def mandate(term: str) -> Dict[str, Any]:
     """
     QCO mandate lookup via SQL. Must never hallucinate.
+    Augmented with Exa web search for latest gazette notifications.
     """
-    if not store:
-        return {"mandatory": None, "citations": []}
+    citations: list = []
+    result: Dict[str, Any] = {"mandatory": None, "citations": []}
 
-    rows = store.mandate_for(term)
-    if not rows:
-        return {"mandatory": None, "citations": []}
+    if store:
+        rows = store.mandate_for(term)
+        if rows:
+            r = rows[0]
+            for row in rows[:3]:
+                citations.append({
+                    "kind": "qco",
+                    "ref": row.get("is_number") or row.get("qco_title", "QCO Order"),
+                    "product": row.get("product_desc", ""),
+                    "scheme": row.get("scheme", "ISI"),
+                    "title": row.get("qco_title", ""),
+                    "url": row.get("gazette_url") or row.get("source_url", "https://egazette.gov.in/"),
+                    "retrieved_on": row.get("retrieved_on", "2026-09-09")
+                })
+            result = {
+                "mandatory": True,
+                "scheme": r.get("scheme", "ISI"),
+                "is_number": r.get("is_number"),
+                "product_desc": r.get("product_desc"),
+                "effective_on": r.get("effective_on"),
+                "qco_title": r.get("qco_title"),
+                "citations": citations,
+                "_top_score": 1.0
+            }
 
-    r = rows[0]
-    citations = []
-    for row in rows[:3]:
-        citations.append({
-            "kind": "qco",
-            "ref": row.get("is_number") or row.get("qco_title", "QCO Order"),
-            "product": row.get("product_desc", ""),
-            "scheme": row.get("scheme", "ISI"),
-            "title": row.get("qco_title", ""),
-            "url": row.get("gazette_url") or row.get("source_url", "https://egazette.gov.in/"),
-            "retrieved_on": row.get("retrieved_on", "2026-09-09")
-        })
+    # Augment with live Exa web search for QCO / gazette updates
+    web = web_augment(f"QCO mandatory certification {term}")
+    result["web_hits"] = web["web_hits"]
+    result.setdefault("citations", [])
+    result["citations"].extend(web["citations"])
+    if not result.get("_top_score") and web["web_hits"]:
+        result["_top_score"] = 0.8
 
-    return {
-        "mandatory": True,
-        "scheme": r.get("scheme", "ISI"),
-        "is_number": r.get("is_number"),
-        "product_desc": r.get("product_desc"),
-        "effective_on": r.get("effective_on"),
-        "qco_title": r.get("qco_title"),
-        "citations": citations,
-        "_top_score": 1.0
-    }
+    return result
 
 
 def scheme(query_or_name: str) -> Dict[str, Any]:
@@ -152,6 +191,58 @@ def scheme(query_or_name: str) -> Dict[str, Any]:
     return {
         "scheme_code": target_key,
         "scheme": sch,
+        "citations": citations,
+        "_top_score": 1.0
+    }
+
+
+def scheme(query_or_name: str) -> Dict[str, Any]:
+    """
+    Dynamic walk of Jay's schemes.yaml decision tree.
+    Extracts scheme type (CRS, ISI, HALLMARKING, FMCS) from query.
+    Augmented with Exa web search for latest BIS scheme fee/process updates.
+    """
+    path = _ROOT / "data" / "curated" / "schemes.yaml"
+    if not path.exists():
+        return {"scheme": None, "citations": []}
+
+    with open(path, encoding="utf-8") as f:
+        schemes_data = yaml.safe_load(f) or {}
+
+    ql = query_or_name.strip().upper()
+
+    # Detect target scheme from query
+    target_key = "CRS"
+    if "HALLMARK" in ql or "GOLD" in ql or "SILVER" in ql or "JEWELLERY" in ql or "HUID" in ql:
+        target_key = "HALLMARKING"
+    elif "FMCS" in ql or "FOREIGN" in ql or "IMPORT" in ql:
+        target_key = "FMCS"
+    elif "ISI" in ql or "SCHEME 1" in ql or "SCHEME I" in ql or "PRODUCT CERTIFICATION" in ql or "TOY" in ql or "CEMENT" in ql or "STEEL" in ql:
+        target_key = "ISI"
+    elif "CRS" in ql or "ELECTRONIC" in ql or "IT GOODS" in ql or "LED" in ql or "LAPTOP" in ql:
+        target_key = "CRS"
+    elif target_key not in schemes_data and schemes_data:
+        target_key = list(schemes_data.keys())[0]
+
+    sch = schemes_data.get(target_key, {})
+    citations: list = []
+    if sch:
+        citations.append({
+            "kind": "scheme",
+            "ref": sch.get("name", target_key),
+            "fees": sch.get("fees", {}).get("application", ""),
+            "url": sch.get("fees", {}).get("source_url", "https://bis.gov.in/"),
+            "retrieved_on": str(sch.get("fees", {}).get("retrieved_on", "2026-09-08"))
+        })
+
+    # Augment with live Exa web search for scheme updates
+    web = web_augment(f"BIS {target_key} certification scheme fees process steps")
+    citations.extend(web["citations"])
+
+    return {
+        "scheme_code": target_key,
+        "scheme": sch,
+        "web_hits": web["web_hits"],
         "citations": citations,
         "_top_score": 1.0
     }
@@ -363,16 +454,31 @@ def _call_ollama_llm(prompt: str, host: str = "http://localhost:11434") -> Optio
 def phrase(facts: Dict[str, Any], question: str) -> str:
     """
     Turns retrieved facts into a 1-2 sentence answer via LLM with strict grounding.
+    Injects web snippets from Exa into the LLM context for live BIS data.
     Adds NO ungrounded facts. Falls back to clean deterministic phrasing.
     """
+    # Build web context block from Exa results if available
+    web_hits = facts.get("web_hits", [])
+    web_context = ""
+    if web_hits:
+        lines = []
+        for h in web_hits[:3]:
+            title = h.get("title", "")
+            snippet = h.get("snippet", "")
+            url = h.get("url", "")
+            date = h.get("published_date", "")
+            lines.append(f"[WEB] {title} ({date})\n  {snippet}\n  Source: {url}")
+        web_context = "\n\nLive Web Sources (from official BIS/government domains):\n" + "\n".join(lines)
+
     p = (
         f"You are Manak Mitra, the official AI Assistant for Bureau of Indian Standards (BIS).\n"
-        f"Answer the user query using ONLY the following verified facts:\n{facts}\n"
+        f"Answer the user query using ONLY the following verified facts and web sources:\n{facts}{web_context}\n"
         f"User Query: {question}\n\n"
         f"Rules:\n"
         f"1. Maximum two concise, polite sentences.\n"
         f"2. Never state an IS number or standard that is not present in the facts.\n"
-        f"3. Mention applicable scheme (ISI, CRS, Hallmarking) or lab if present in facts."
+        f"3. Mention applicable scheme (ISI, CRS, Hallmarking) or lab if present in facts.\n"
+        f"4. If a web source provides more recent or specific information, prefer it but cite the URL."
     )
 
     # 1. Google Gemini
