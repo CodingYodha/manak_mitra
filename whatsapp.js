@@ -260,8 +260,18 @@ async function startWhatsAppBot() {
         }
 
         // 🚀 Forward technical/standards queries to FastAPI RAG backend
-        const chatUrl = `${BACKEND_URL}/chat?q=${encodeURIComponent(query)}&channel=whatsapp`;
-        const response = await fetch(chatUrl, { method: "POST" });
+        const hasHindi = /[\u0900-\u097F]/.test(query);
+        const lang = hasHindi ? "hi" : "en";
+        const chatUrl = `${BACKEND_URL}/chat?q=${encodeURIComponent(query)}&lang=${lang}&channel=whatsapp`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+        const response = await fetch(chatUrl, {
+          method: "POST",
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           throw new Error(`Backend returned HTTP ${response.status}`);
@@ -269,6 +279,9 @@ async function startWhatsAppBot() {
 
         const data = await response.json();
         let reply = data.answer || "No response received from standards engine.";
+
+        // Convert standard markdown **bold** to WhatsApp *bold*
+        reply = reply.replace(/\*\*(.*?)\*\*/g, "*$1*");
 
         // Format citations (capped to top 2 for clean mobile display)
         if (data.citations && data.citations.length > 0) {
