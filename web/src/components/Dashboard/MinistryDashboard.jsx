@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart3, LoaderCircle, ShieldAlert } from 'lucide-react';
-
-const apiUrl = (path) => `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')}${path}`;
+import { apiUrl } from '../../config';
 const empty = { total_queries: 0, abstained_queries: 0, qcos_indexed: 0, mandatory_products_indexed: 0, testing_labs_indexed: 0, lab_scope_mappings: 0, standards_in_db: 0, queries_with_source_match: 0, intents: [], languages: [], channels: [], abstentions_by_intent: [], daily_activity: [], confidence_distribution: [], qcos_by_ministry: [] };
 
 function Breakdown({ title, rows, total, tone = '#2563eb' }) {

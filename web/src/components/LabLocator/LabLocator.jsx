@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ExternalLink, LoaderCircle, MapPin, Search, ShieldAlert } from 'lucide-react';
-
-const apiUrl = (path) => `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')}${path}`;
+import { apiUrl } from '../../config';
 
 export default function LabLocator() {
   const [labs, setLabs] = useState([]);

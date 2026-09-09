@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, ImageUp, LoaderCircle, ShieldAlert, ShieldCheck } from 'lucide-react';
-
-const apiUrl = (path) => `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')}${path}`;
+import { apiUrl } from '../../config';
 
 const MARK_TYPES = {
   huid: { label: 'Hallmark HUID', placeholder: 'e.g. 9A2F8K' },

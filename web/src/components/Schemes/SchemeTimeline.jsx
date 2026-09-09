@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Clock, ExternalLink, LoaderCircle, ShieldAlert } from 'lucide-react';
-
-const apiUrl = (path) => `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')}${path}`;
+import { apiUrl } from '../../config';
 
 function durationLabel(duration) {
   if (!Array.isArray(duration) || duration.length !== 2) return 'Not published';
