@@ -1,0 +1,3 @@
+# Isolated from the Python 3.9 RAG environment. RealtimeSTT 1.1.x targets
+# Python 3.11/3.12 and provides the production FastAPI/WebSocket server.
+RealtimeSTT[server,faster-whisper]==1.1.2

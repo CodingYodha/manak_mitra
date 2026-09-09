@@ -83,13 +83,22 @@ def mandate_for(term: str) -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
-_MATCH_STOPWORDS = {"and", "for", "of", "the", "with", "use", "in", "to", "a", "an", "part", "general", "product"}
+_MATCH_STOPWORDS = {
+    "and", "for", "of", "the", "with", "use", "in", "to", "a", "an", "part", "general", "product",
+    "is", "bis", "certification", "mandatory", "what", "which", "standard", "qco", "scheme", "requirements",
+    "rules", "do", "does", "need", "apply", "application", "tell", "about", "please", "my", "i", "how",
+    "hallmark", "hallmarking", "huid", "child", "children"
+}
 _MATCH_SYNONYMS = {"bulb": "lamp", "bulbs": "lamp", "lamps": "lamp", "toys": "toy", "children": "child", "jewellery": "jewelry"}
 
 
 def _terms(text: str) -> set[str]:
     words = re.findall(r"[a-z0-9]+", (text or "").lower())
-    return {_MATCH_SYNONYMS.get(word, word[:-1] if word.endswith("s") and len(word) > 3 else word) for word in words if len(word) > 1 and word not in _MATCH_STOPWORDS}
+    return {
+        _MATCH_SYNONYMS.get(word, word[:-1] if word.endswith("s") and len(word) > 3 else word)
+        for word in words
+        if len(word) > 1 and word not in _MATCH_STOPWORDS and not re.fullmatch(r"\d+[a-z]+", word)
+    }
 
 
 def passport_candidates(query: str, limit: int = 8) -> List[Dict[str, Any]]:

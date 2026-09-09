@@ -17,9 +17,32 @@ import {
   RotateCcw,
   Globe,
   Tag,
-  FileCheck
+  FileCheck,
+  Database,
+  History,
+  Network,
+  Trash2,
+  ChevronRight,
+  FlaskConical
 } from 'lucide-react';
 import { apiUrl } from '../../config';
+import { startRealtimeStt } from '../../lib/realtimeStt';
+import {
+  createConversationRecord,
+  deleteConversation,
+  getConversation,
+  listConversations,
+  saveConversation
+} from '../../lib/chatStore';
+
+const welcomeMessage = () => ({
+  id: Date.now(),
+  sender: 'bot',
+  text: 'Namaste! I am Manak Mitra, your official compliance assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory certification schemes, fees, or laboratory testing.',
+  citations: [],
+  abstained: false,
+  timestamp: 'Just now'
+});
 
 const STARTER_PROMPT_CARDS = [
   {
@@ -279,22 +302,133 @@ function FormattedMessage({ text }) {
   );
 }
 
+function GroundingPanel({ grounding, citations = [] }) {
+  if (!grounding?.available) return null;
+  const standard = grounding.standards?.[0];
+  const qco = grounding.qcos?.[0];
+  const scheme = grounding.schemes?.[0];
+  const sector = grounding.sectors?.[0];
+  const labCount = grounding.labs?.length || 0;
+
+  return (
+    <details className="grounding-panel" open>
+      <summary>
+        <span className="grounding-summary-icon"><Network size={15} /></span>
+        <span><strong>Why this answer</strong><small>Live knowledge-graph evidence trace</small></span>
+        <span className="grounding-confidence"><ShieldCheck size={12} /> {citations.length} verified source{citations.length === 1 ? '' : 's'}</span>
+      </summary>
+      <div className="grounding-body">
+        <div className="grounding-path" aria-label="Knowledge graph traversal path">
+          <span className="grounding-node query"><Sparkles size={12} /> Query</span>
+          <ChevronRight size={14} />
+          <span className="grounding-node standard"><Tag size={12} /> {standard?.is_number || 'Standard'}</span>
+          {(qco || scheme) && <><ChevronRight size={14} /><span className="grounding-node regulation"><FileCheck size={12} /> {scheme?.label || qco?.label || 'QCO'}</span></>}
+          {labCount > 0 && <><ChevronRight size={14} /><span className="grounding-node lab"><FlaskConical size={12} /> {labCount} scoped labs shown</span></>}
+        </div>
+        <div className="grounding-metrics">
+          <div><strong>{grounding.relationship_count || 0}</strong><span>relationships traversed</span></div>
+          <div><strong>{grounding.catalog?.nodes?.toLocaleString?.() || grounding.catalog?.nodes}</strong><span>catalogue nodes</span></div>
+          <div><strong>{grounding.catalog?.edges?.toLocaleString?.() || grounding.catalog?.edges}</strong><span>graph connections</span></div>
+          <div><strong>{sector?.code || '—'}</strong><span>{sector?.label || 'ICS sector'}</span></div>
+        </div>
+        {grounding.labs?.length > 0 && (
+          <div className="grounding-labs">
+            <span>Scope-linked facilities:</span> {grounding.labs.slice(0, 3).map((lab) => `${lab.label}${lab.city ? `, ${lab.city}` : ''}`).join(' · ')}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export default function ChatAssistant({ onSelectNode, onViewPassport, initialQuery, onNavigate }) {
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      sender: 'bot',
-      text: 'Namaste! I am Manak Mitra, your official compliance assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory certification schemes, fees, or laboratory testing.',
-      citations: [],
-      abstained: false,
-      timestamp: 'Just now'
-    }
-  ]);
+  const [messages, setMessages] = useState([welcomeMessage()]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState({ state: 'idle', label: '' });
+  const [voiceLatency, setVoiceLatency] = useState(null);
+  const [voiceDraftLanguage, setVoiceDraftLanguage] = useState(null);
+  const [sttAvailable, setSttAvailable] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [conversationId, setConversationId] = useState(null);
+  const [conversationCreatedAt, setConversationCreatedAt] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [storageError, setStorageError] = useState('');
   const messagesEndRef = useRef(null);
+  const persistenceTimerRef = useRef(null);
+  const initialQueryHandledRef = useRef(false);
+  const voiceSessionRef = useRef(null);
+  const browserRecognitionRef = useRef(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(apiUrl('/api/stt/status'), { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('STT status unavailable')))
+      .then((status) => setSttAvailable(Boolean(status.available)))
+      .catch((error) => {
+        if (error.name !== 'AbortError') setSttAvailable(false);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function hydrateHistory() {
+      try {
+        const rows = await listConversations();
+        if (cancelled) return;
+        if (rows.length) {
+          const latest = rows[0];
+          const restoredMessages = (latest.messages || [])
+            .filter((message) => !(message.sender === 'bot' && message.isStreaming && !message.text))
+            .map((message) => message.isStreaming ? { ...message, isStreaming: false } : message);
+          setConversations(rows);
+          setConversationId(latest.id);
+          setConversationCreatedAt(latest.createdAt);
+          setMessages(restoredMessages.length ? restoredMessages : [welcomeMessage()]);
+        } else {
+          const initial = createConversationRecord([welcomeMessage()]);
+          await saveConversation(initial);
+          if (cancelled) return;
+          setConversationId(initial.id);
+          setConversationCreatedAt(initial.createdAt);
+          setConversations([initial]);
+          setMessages(initial.messages);
+        }
+      } catch (error) {
+        if (!cancelled) setStorageError(error.message || 'Local history is unavailable.');
+      } finally {
+        if (!cancelled) setHistoryReady(true);
+      }
+    }
+    hydrateHistory();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!historyReady || !conversationId) return undefined;
+    window.clearTimeout(persistenceTimerRef.current);
+    persistenceTimerRef.current = window.setTimeout(async () => {
+      const firstQuestion = messages.find((message) => message.sender === 'user')?.text;
+      const record = {
+        id: conversationId,
+        title: firstQuestion ? firstQuestion.slice(0, 64) : 'New compliance inquiry',
+        messages,
+        createdAt: conversationCreatedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      try {
+        await saveConversation(record);
+        setConversations((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+      } catch (error) {
+        setStorageError(error.message || 'Unable to save this conversation locally.');
+      }
+    }, 450);
+    return () => window.clearTimeout(persistenceTimerRef.current);
+  }, [messages, conversationId, conversationCreatedAt, historyReady]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -305,18 +439,20 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
   }, [messages, loading]);
 
   useEffect(() => {
-    if (initialQuery) {
+    if (historyReady && initialQuery && !initialQueryHandledRef.current) {
+      initialQueryHandledRef.current = true;
       setInput(initialQuery);
       handleSend(initialQuery);
     }
-  }, [initialQuery]);
+  }, [initialQuery, historyReady]);
 
-  const handleSend = async (queryText) => {
+  const handleSend = async (queryText, languageOverride) => {
     const q = (queryText || input).trim();
     if (!q || loading) return;
 
     const hasHindi = /[\u0900-\u097F]/.test(q);
-    const lang = hasHindi ? 'hi' : 'en';
+    const detectedDraftLanguage = queryText ? null : voiceDraftLanguage;
+    const lang = languageOverride === 'hi' || detectedDraftLanguage === 'hi' || hasHindi ? 'hi' : 'en';
 
     const userMsg = {
       id: Date.now(),
@@ -329,6 +465,9 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
 
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    setVoiceDraftLanguage(null);
+    setVoiceStatus({ state: 'idle', label: '' });
+    setVoiceLatency(null);
     setLoading(true);
 
     // Create an empty bot message that will be filled by streaming tokens
@@ -398,6 +537,8 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                           intent: parsed.intent || '',
                           highlight_nodes: parsed.highlight_nodes || [],
                           passport_url: parsed.passport_url || '',
+                          product: parsed.passport_product || q,
+                          grounding: parsed.grounding || {},
                           isStreaming: false
                         }
                       : m
@@ -450,7 +591,8 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                     intent: data.intent,
                     highlight_nodes: data.highlight_nodes || [],
                     passport_url: data.passport_url || '',
-                    product: q,
+                    product: data.passport_product || q,
+                    grounding: data.grounding || {},
                     isStreaming: false
                   }
                 : m
@@ -511,17 +653,43 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
     }
   };
 
-  const handleClearChat = () => {
-    setMessages([
-      {
-        id: Date.now(),
-        sender: 'bot',
-        text: 'Namaste! I am Manak Mitra, your official compliance assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory certification schemes, fees, or laboratory testing.',
-        citations: [],
-        abstained: false,
-        timestamp: 'Just now'
-      }
-    ]);
+  const handleClearChat = async () => {
+    const record = createConversationRecord([welcomeMessage()]);
+    setConversationId(record.id);
+    setConversationCreatedAt(record.createdAt);
+    setMessages(record.messages);
+    setHistoryOpen(false);
+    try {
+      await saveConversation(record);
+      setConversations((current) => [record, ...current]);
+    } catch (error) {
+      setStorageError(error.message || 'Unable to create a local conversation.');
+    }
+  };
+
+  const handleOpenConversation = async (id) => {
+    try {
+      const record = await getConversation(id);
+      if (!record) return;
+      setConversationId(record.id);
+      setConversationCreatedAt(record.createdAt);
+      setMessages(record.messages?.length ? record.messages : [welcomeMessage()]);
+      setHistoryOpen(false);
+    } catch (error) {
+      setStorageError(error.message || 'Unable to open that conversation.');
+    }
+  };
+
+  const handleDeleteConversation = async (event, id) => {
+    event.stopPropagation();
+    try {
+      await deleteConversation(id);
+      const remaining = conversations.filter((item) => item.id !== id);
+      setConversations(remaining);
+      if (id === conversationId) await handleClearChat();
+    } catch (error) {
+      setStorageError(error.message || 'Unable to remove that conversation.');
+    }
   };
 
   const handleCopyText = (text, id) => {
@@ -530,39 +698,95 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Browser Speech-to-Text (STT)
-  const toggleVoice = () => {
+  const startBrowserSpeechFallback = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Speech Recognition is supported on Chrome & Edge. Please allow microphone access.');
-      return;
-    }
-
-    if (isListening) {
+      setVoiceStatus({ state: 'error', label: 'Microphone transcription is unavailable in this browser.' });
       setIsListening(false);
       return;
     }
-
     try {
       const recognition = new SpeechRecognition();
-      recognition.lang = 'hi-IN'; // Understands both Hindi and Indian English
+      browserRecognitionRef.current = recognition;
+      recognition.lang = /[\u0900-\u097F]/.test(input) ? 'hi-IN' : 'en-IN';
       recognition.interimResults = false;
-
-      recognition.onstart = () => setIsListening(true);
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceStatus({ state: 'fallback', label: 'Browser speech fallback active' });
+      };
       recognition.onresult = (e) => {
         const text = e.results[0][0].transcript;
         setInput(text);
+        setVoiceDraftLanguage(recognition.lang.startsWith('hi') ? 'hi' : 'en');
         setIsListening(false);
-        handleSend(text);
+        setVoiceStatus({ state: 'complete', label: 'Transcript ready · review or edit before sending' });
       };
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
+      recognition.onerror = () => {
+        setIsListening(false);
+        setVoiceStatus({ state: 'error', label: 'Speech recognition failed. Check microphone permission.' });
+      };
+      recognition.onend = () => {
+        browserRecognitionRef.current = null;
+        setIsListening(false);
+      };
       recognition.start();
     } catch (e) {
       console.error(e);
       setIsListening(false);
+      setVoiceStatus({ state: 'error', label: 'Unable to start microphone transcription.' });
     }
   };
+
+  // RealtimeSTT first; browser recognition remains a no-install fallback.
+  const toggleVoice = async () => {
+    if (isListening) {
+      if (voiceSessionRef.current) {
+        await voiceSessionRef.current.stop();
+      } else if (browserRecognitionRef.current) {
+        browserRecognitionRef.current.stop();
+      }
+      setIsListening(false);
+      return;
+    }
+
+    setVoiceLatency(null);
+    setIsListening(true);
+    try {
+      voiceSessionRef.current = await startRealtimeStt({
+        language: 'auto',
+        onPartial: ({ text, language }) => {
+          setInput(text);
+          if (language && language !== 'auto') setVoiceDraftLanguage(language);
+        },
+        onStatus: setVoiceStatus,
+        onFinal: ({ text, language, latencyMs }) => {
+          voiceSessionRef.current = null;
+          setInput(text);
+          setIsListening(false);
+          setVoiceLatency(latencyMs);
+          if (language && language !== 'auto') setVoiceDraftLanguage(language);
+          setVoiceStatus({
+            state: 'complete',
+            label: `Transcript ready${language && language !== 'auto' ? ` · ${language.toUpperCase()}` : ''} · review or edit before sending`
+          });
+        },
+        onError: (error) => {
+          voiceSessionRef.current = null;
+          setIsListening(false);
+          setVoiceStatus({ state: 'error', label: error.message });
+        }
+      });
+    } catch (error) {
+      voiceSessionRef.current = null;
+      setVoiceStatus({ state: 'fallback', label: 'Local STT unavailable · using browser fallback' });
+      startBrowserSpeechFallback();
+    }
+  };
+
+  useEffect(() => () => {
+    voiceSessionRef.current?.cancel?.();
+    browserRecognitionRef.current?.abort?.();
+  }, []);
 
   // Browser Text-to-Speech (TTS)
   const speakText = (text) => {
@@ -614,32 +838,35 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                   borderRadius: '12px'
                 }}
               >
-                RAG + Exa Web
+                RAG + Knowledge Graph
               </span>
+              {sttAvailable && (
+                <span className="local-voice-ready" title="Multilingual speech recognition runs on this machine">
+                  <Mic size={11} /> Local voice ready
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '11.5px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }}></span>
-              23,573 Standards · Zero-Hallucination Guard Active
+              23,573 Standards · 26,835 Graph Nodes · Guard Active
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="local-save-status" title="Conversation content stays in this browser">
+            <Database size={12} /> {historyReady ? 'Saved locally' : 'Opening local DB'}
+          </span>
+          <button
+            onClick={() => setHistoryOpen((current) => !current)}
+            className="chat-topbar-button"
+            title="Open locally saved conversations"
+          >
+            <History size={13} /> History <span>{conversations.length}</span>
+          </button>
           <button
             onClick={handleClearChat}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              fontSize: '12.5px',
-              fontWeight: 500,
-              color: '#475569',
-              cursor: 'pointer'
-            }}
+            className="chat-topbar-button primary"
             title="Start fresh chat"
           >
             <RotateCcw size={13} />
@@ -647,6 +874,34 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
           </button>
         </div>
       </div>
+
+      {historyOpen && (
+        <div className="chat-history-panel">
+          <div className="chat-history-header">
+            <div><strong>Conversation history</strong><span>Private to this browser · IndexedDB</span></div>
+            <button onClick={() => setHistoryOpen(false)} aria-label="Close conversation history">×</button>
+          </div>
+          {storageError && <div className="chat-storage-error">{storageError}</div>}
+          <div className="chat-history-list">
+            {conversations.map((conversation) => (
+              <div
+                key={conversation.id}
+                className={`chat-history-item ${conversation.id === conversationId ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleOpenConversation(conversation.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') handleOpenConversation(conversation.id);
+                }}
+              >
+                <span><strong>{conversation.title}</strong><small>{new Date(conversation.updatedAt).toLocaleString()} · {Math.max(0, (conversation.messages?.length || 1) - 1)} messages</small></span>
+                <button className="chat-history-delete" onClick={(event) => handleDeleteConversation(event, conversation.id)} title="Delete conversation" aria-label={`Delete ${conversation.title}`}><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+          <button className="chat-history-new" onClick={handleClearChat}><RotateCcw size={14} /> Start a new compliance inquiry</button>
+        </div>
+      )}
 
       {/* 2. MESSAGES VIEWPORT — Full-Height Scrollable */}
       <div className="chatgpt-messages-viewport">
@@ -685,7 +940,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
 
           {/* Conversation Stream */}
           {messages.map((m) => (
-            <div key={m.id} className={`chatgpt-row ${m.sender}`}>
+            <div key={m.id} className={`chatgpt-row ${m.sender} ${m.isStreaming && !m.text ? 'stream-empty' : ''}`}>
               {m.sender === 'user' ? (
                 <div className="chatgpt-user-bubble">{m.text}</div>
               ) : (
@@ -701,6 +956,8 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                     {m.isStreaming && (
                       <span className="streaming-cursor">▌</span>
                     )}
+
+                    {!m.isStreaming && <GroundingPanel grounding={m.grounding} citations={m.citations} />}
 
                     {/* Citations (Official Gazette, Standards & Live Web) — hidden for greetings */}
                     {m.citations && m.citations.length > 0 && m.intent !== 'greeting' && !m.isStreaming && (
@@ -953,7 +1210,14 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
               className="chatgpt-input-field"
               placeholder="Ask about any product, IS standard, QCO, or fees (e.g. 9W LED bulb, 22K gold, toys)..."
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                if (!e.target.value.trim()) {
+                  setVoiceDraftLanguage(null);
+                  setVoiceStatus({ state: 'idle', label: '' });
+                  setVoiceLatency(null);
+                }
+              }}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             />
 
@@ -966,6 +1230,16 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
               <Send size={16} />
             </button>
           </div>
+
+          {voiceStatus.state !== 'idle' && (
+            <div className={`realtime-stt-status ${voiceStatus.state}`} role="status" aria-live="polite">
+              <span className="voice-live-dot" />
+              <strong>{voiceStatus.label}</strong>
+              {isListening && <span className="voice-wave" aria-hidden="true">{[1, 2, 3, 4, 5].map((bar) => <i key={bar} />)}</span>}
+              {voiceLatency !== null && <small>{voiceLatency} ms finalisation</small>}
+              <span className="voice-engine-label">RealtimeSTT · on-device</span>
+            </div>
+          )}
 
           <div className="chatgpt-disclaimer-text">
             Manak Mitra AI answers are strictly grounded in official Bureau of Indian Standards (BIS) publications, gazetted QCOs, and verified web sources.

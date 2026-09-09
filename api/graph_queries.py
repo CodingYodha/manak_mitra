@@ -287,6 +287,87 @@ def related_standards(is_number: str, k: int = 5) -> list[dict]:
     return siblings[:k]
 
 
+def grounding_trace(is_numbers: list[str], product_hint: str = "") -> dict:
+    """Return a compact, explainable graph trace for an assistant answer.
+
+    The trace is deliberately small: it proves which catalogue entities and
+    relationships supported the response without sending the full graph to the
+    chat UI or to an LLM.
+    """
+    G = _G()
+    standards = []
+    products: dict[str, dict] = {}
+    labs: dict[str, dict] = {}
+    qcos: dict[str, dict] = {}
+    schemes: dict[str, dict] = {}
+    sectors: dict[str, dict] = {}
+    relationships = 0
+
+    for is_number in list(dict.fromkeys(is_numbers or []))[:3]:
+        standard_id = _std_id(is_number)
+        if standard_id not in G:
+            continue
+        standard_data = dict(G.nodes[standard_id])
+        standard = {
+            "id": standard_id,
+            "is_number": standard_data.get("is_number", is_number),
+            "label": standard_data.get("label", is_number),
+            "status": standard_data.get("status", ""),
+            "year": standard_data.get("year", ""),
+        }
+        standards.append(standard)
+
+        for source, _, edge in G.in_edges(standard_id, data=True):
+            source_data = dict(G.nodes[source])
+            source_type = source_data.get("type")
+            if source_type in {"product", "product_alias"}:
+                products[source] = {"id": source, "label": source_data.get("label", source)}
+                relationships += 1
+                for _, target, product_edge in G.out_edges(source, data=True):
+                    if product_edge.get("rel") != "governed_by":
+                        continue
+                    qco_data = dict(G.nodes[target])
+                    qcos[target] = {"id": target, "label": qco_data.get("label", target)}
+                    relationships += 1
+                    for _, scheme_id, scheme_edge in G.out_edges(target, data=True):
+                        if scheme_edge.get("rel") == "under":
+                            scheme_data = dict(G.nodes[scheme_id])
+                            schemes[scheme_id] = {"id": scheme_id, "label": scheme_data.get("label", scheme_id)}
+                            relationships += 1
+            elif source_type == "lab":
+                labs[source] = {
+                    "id": source,
+                    "label": source_data.get("label", source),
+                    "city": source_data.get("city", ""),
+                    "state": source_data.get("state", ""),
+                }
+                relationships += 1
+
+        for _, target, edge in G.out_edges(standard_id, data=True):
+            if edge.get("rel") == "classified_as" and G.nodes[target].get("type") == "ics":
+                target_data = dict(G.nodes[target])
+                sectors[target] = {
+                    "id": target,
+                    "code": target_data.get("code", target.split(":", 1)[-1]),
+                    "label": target_data.get("label", ""),
+                }
+                relationships += 1
+
+    return {
+        "available": bool(standards),
+        "mode": "knowledge_graph",
+        "query_entity": product_hint,
+        "standards": standards,
+        "products": list(products.values())[:4],
+        "qcos": list(qcos.values())[:3],
+        "schemes": list(schemes.values())[:3],
+        "labs": list(labs.values())[:5],
+        "sectors": list(sectors.values())[:3],
+        "relationship_count": relationships,
+        "catalog": {"nodes": G.number_of_nodes(), "edges": G.number_of_edges()},
+    }
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # FEATURE 15 — Full product → standard → lab traversal path
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

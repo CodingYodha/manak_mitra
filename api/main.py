@@ -12,8 +12,9 @@ if _env_file.exists():
                 _k, _v = _l.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip())
 
+import asyncio
 import json
-from fastapi import FastAPI, UploadFile, File, Form, Query
+from fastapi import FastAPI, UploadFile, File, Form, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from api import answers, azure_openai, guard, store, marks, lang as lang_utils
@@ -33,17 +34,195 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+STT_UPSTREAM_HTTP = os.environ.get("REALTIMESTT_URL", "http://127.0.0.1:8010").rstrip("/")
+MAX_STT_AUDIO_BYTES = int(os.environ.get("MAX_STT_AUDIO_BYTES", 16000 * 2 * 120))
+
+
+@app.get("/api/stt/status")
+async def stt_status():
+    """Report optional local RealtimeSTT readiness without blocking the assistant."""
+    try:
+        async with httpx.AsyncClient(timeout=1.5) as client:
+            response = await client.get(f"{STT_UPSTREAM_HTTP}/api/v1/ready")
+        payload = response.json() if response.content else {}
+        return {
+            "available": response.status_code == 200 and payload.get("ready", True),
+            "engine": payload.get("engine") or payload.get("provider") or "RealtimeSTT",
+            "model": payload.get("model"),
+            "multilingual": True,
+            "languages": ["auto", "en", "hi"],
+        }
+    except Exception:
+        return {
+            "available": False,
+            "engine": "RealtimeSTT",
+            "model": None,
+            "multilingual": True,
+            "languages": ["auto", "en", "hi"],
+        }
+
+
+@app.websocket("/ws/stt")
+async def stt_websocket_proxy(client_socket: WebSocket):
+    """Stream browser PCM to local RealtimeSTT with live partials and a final pass.
+
+    The production HTTP inference endpoint is used deliberately: the speech
+    sidecar remains private on loopback, while this stable browser protocol is
+    independent of upstream WebSocket implementation changes.
+    """
+    await client_socket.accept()
+    send_lock = asyncio.Lock()
+    preview_task = None
+    audio = bytearray()
+    expected_sequence = 0
+    last_preview_length = 0
+    language = "auto"
+    turn_id = None
+
+    async def send(payload):
+        async with send_lock:
+            await client_socket.send_json(payload)
+
+    async def transcribe(client, pcm, beam_size):
+        response = await client.post(
+            f"{STT_UPSTREAM_HTTP}/transcribe-pcm16",
+            params={
+                "sample_rate": 16000,
+                "encoding": "pcm16",
+                "language": language,
+                "beam_size": beam_size,
+                "best_of": 1,
+                "vad_filter": "false",
+            },
+            content=pcm,
+            headers={"content-type": "application/octet-stream"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def emit_preview(client, pcm_snapshot):
+        try:
+            result = await transcribe(client, pcm_snapshot, 1)
+            text = str(result.get("text") or "").strip()
+            if text:
+                await send({
+                    "type": "realtime",
+                    "turnId": turn_id,
+                    "text": text,
+                    "mergedText": text,
+                    "language": result.get("detected_language") or language,
+                })
+        except Exception:
+            # A partial is advisory; the accurate final pass still owns errors.
+            return
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30, connect=2)) as client:
+            readiness = await client.get(f"{STT_UPSTREAM_HTTP}/api/v1/ready")
+            readiness.raise_for_status()
+            await send({"type": "hello", "capabilities": {"languages": ["auto", "en", "hi"]}})
+            await send({"type": "ready", "ready": True})
+
+            while True:
+                message = await client_socket.receive()
+                if message.get("type") == "websocket.disconnect":
+                    return
+
+                if message.get("text") is not None:
+                    command = json.loads(message["text"])
+                    command_type = command.get("type")
+                    if command_type == "start":
+                        turn_id = str(command.get("turnId") or f"manak-{datetime.datetime.now().timestamp()}")
+                        requested_language = str(command.get("language") or "auto").lower()
+                        language = requested_language if requested_language in {"auto", "en", "hi"} else "auto"
+                        await send({"type": "started", "turnId": turn_id, "language": language})
+                    elif command_type == "cancel":
+                        return
+                    elif command_type == "finalize":
+                        if preview_task is not None:
+                            await asyncio.gather(preview_task, return_exceptions=True)
+                        if not audio:
+                            await send({"type": "error", "code": "empty_audio", "message": "No speech was detected."})
+                            await send({"type": "completion", "turnId": turn_id})
+                            return
+                        result = await transcribe(client, bytes(audio), 3)
+                        await send({
+                            "type": "final",
+                            "turnId": turn_id,
+                            "text": str(result.get("text") or "").strip(),
+                            "detectedLanguage": result.get("detected_language") or language,
+                            "languageProbability": result.get("language_probability"),
+                            "inferenceMs": round(float(result.get("elapsed_seconds") or 0) * 1000),
+                        })
+                        await send({"type": "completion", "turnId": turn_id})
+                        return
+                    continue
+
+                packet = message.get("bytes")
+                if packet is None or len(packet) < 5 or turn_id is None:
+                    continue
+                metadata_size = int.from_bytes(packet[:4], "little")
+                if metadata_size <= 0 or 4 + metadata_size >= len(packet):
+                    await send({"type": "error", "code": "invalid_audio", "message": "Invalid audio packet."})
+                    continue
+                metadata = json.loads(packet[4:4 + metadata_size].decode("utf-8"))
+                if (
+                    metadata.get("sampleRate") != 16000
+                    or metadata.get("channels") != 1
+                    or metadata.get("format") != "pcm_s16le"
+                ):
+                    await send({"type": "error", "code": "audio_format", "message": "Audio must be mono PCM16 at 16 kHz."})
+                    continue
+                sequence = int(metadata.get("audioSequence", -1))
+                if sequence != expected_sequence:
+                    await send({"type": "error", "code": "audio_sequence", "message": "Audio packets arrived out of sequence."})
+                    continue
+                expected_sequence += 1
+                pcm = packet[4 + metadata_size:]
+                if len(audio) + len(pcm) > MAX_STT_AUDIO_BYTES:
+                    await send({"type": "error", "code": "audio_limit", "message": "Voice input is limited to two minutes."})
+                    await send({"type": "completion", "turnId": turn_id})
+                    return
+                audio.extend(pcm)
+
+                # Refresh the transcript at roughly 1.2 second audio intervals.
+                preview_interval = 38400
+                if len(audio) >= preview_interval and (
+                    preview_task is None or preview_task.done()
+                ):
+                    if len(audio) - last_preview_length >= preview_interval:
+                        last_preview_length = len(audio)
+                        preview_task = asyncio.create_task(emit_preview(client, bytes(audio)))
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        try:
+            await client_socket.send_json({
+                "type": "error",
+                "code": "local_stt_unavailable",
+                "message": "The local multilingual speech engine is unavailable.",
+            })
+            await client_socket.close(code=1013)
+        except Exception:
+            pass
+    finally:
+        if preview_task is not None and not preview_task.done():
+            preview_task.cancel()
+
 
 def route(q: str) -> str:
     ql = q.lower().strip()
+    huid_candidate = re.search(r"\b[0-9A-Z]{6}\b", q, re.I)
+    has_huid_code = bool(huid_candidate and any(char.isdigit() for char in huid_candidate.group()) and any(char.isalpha() for char in huid_candidate.group()))
+    has_registry_code = bool(re.search(r"\b(?:cm/l[- ]?\d{7}|r[- ]?\d{8})\b", ql, re.I))
     # 0. Friendly greetings, pleasantries, identity queries
     if re.search(r"^\s*(hi|hello|hey|hii+|heyy+|namaste|नमस्ते|नमस्कार|सुप्रभात|who are you|what can you do|help|thanks|thank you|धन्यवाद)\b", ql) or ql in ["hi", "hii", "hello", "hey", "heyy", "namaste", "नमस्ते"]:
         return "greeting"
     if re.search(r"\b(passport|dossier|compliance report|पासपोर्ट)\b", ql):
         return "passport"
-    if re.search(r"\b(verify|huid|hallmark|fake|counterfeit|cml|cm/l|r-number|जांच|सत्यापन|हॉलमार्क)\b", ql):
+    if has_huid_code or has_registry_code or re.search(r"\b(verify|fake|counterfeit|check (?:a |this )?(?:mark|code)|जांच|सत्यापन)\b", ql):
         return "consumer"
-    if re.search(r"\b(scheme|crs|isi|fmcs|process|fees|steps|application|how to apply|लाइसेंस|प्रक्रिया|शुल्क)\b", ql):
+    if re.search(r"\b(scheme|crs|isi|fmcs|hallmark|hallmarking|huid|gold|process|fees|steps|application|how to apply|requirements|rules|लाइसेंस|प्रक्रिया|शुल्क|हॉलमार्क)\b", ql):
         return "scheme"
     if re.search(r"\b(lab|testing|test house|where to test|sample|प्रयोगशाला|टेस्टिंग)\b", ql):
         return "labs"
@@ -65,6 +244,14 @@ def extract_city(q: str) -> str:
         if re.search(rf"\b{c}\b", ql):
             return c.title()
     return ""
+
+
+def catalogue_anchor(query: str) -> Optional[dict]:
+    """Resolve a natural-language product question to the strongest QCO item."""
+    candidates = store.passport_candidates(query, limit=3)
+    if not candidates or candidates[0].get("match_score", 0) < 0.6:
+        return None
+    return candidates[0]
 
 
 @app.on_event("startup")
@@ -271,7 +458,13 @@ def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
         answer_text = mark_res.get("reason", "Mark verification complete.")
         if is_hi:
             answer_text = lang_utils.translate(answer_text, src="en", tgt="hi")
-        refs = list(dict.fromkeys([c["ref"] for c in citations if "ref" in c]))
+        refs = list(dict.fromkeys([
+            c["ref"] for c in citations
+            if c.get("kind") == "standard" and c.get("ref")
+        ]))
+        grounding = answers.graph_grounding(refs, product_hint=query_en)
+        if grounding.get("available"):
+            facts["knowledge_graph"] = grounding
 
         return {
             "intent": intent,
@@ -283,6 +476,7 @@ def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
             "abstained": False,
             "citations": citations,
             "refs": refs,
+            "grounding": grounding,
             "direct_answer": answer_text,
             "verification": mark_res,
             "passport_url": ""
@@ -290,7 +484,25 @@ def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
 
     # ── 2. Scheme & Process Guidance ─────────────────────────────────────────
     elif intent == "scheme":
-        facts = answers.scheme(query_en)
+        scheme_facts = answers.scheme(query_en)
+        recommendation = answers.recommend(query_en)
+        anchor = catalogue_anchor(query_en)
+        mandate_facts = answers.mandate(anchor["is_number"]) if anchor else {}
+        facts = {
+            **scheme_facts,
+            "hits": recommendation.get("hits", []),
+            "web_hits": list({item.get("url"): item for item in (scheme_facts.get("web_hits", []) + recommendation.get("web_hits", [])) if item.get("url")}.values()),
+            "citations": mandate_facts.get("citations", []) + scheme_facts.get("citations", []) + recommendation.get("citations", []),
+            "_top_score": max(scheme_facts.get("_top_score", 0.0), recommendation.get("_top_score", 0.0)),
+        }
+        if anchor:
+            facts.update({
+                "mandatory": True,
+                "is_number": anchor.get("is_number"),
+                "product_desc": anchor.get("product_desc"),
+                "qco_title": anchor.get("qco_title"),
+                "effective_on": anchor.get("effective_on"),
+            })
 
     # ── 3. Laboratory Lookup ────────────────────────────────────────────────
     elif intent == "labs":
@@ -304,7 +516,16 @@ def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
 
     # ── 5. Mandate & Standards Search ───────────────────────────────────────
     elif intent == "mandate":
-        facts = answers.mandate(query_en)
+        anchor = catalogue_anchor(query_en)
+        facts = answers.mandate(anchor["is_number"] if anchor else query_en)
+        if anchor and facts.get("mandatory"):
+            facts.update({
+                "is_number": anchor.get("is_number"),
+                "product_desc": anchor.get("product_desc"),
+                "qco_title": anchor.get("qco_title"),
+                "effective_on": anchor.get("effective_on"),
+                "scheme": anchor.get("scheme") or facts.get("scheme"),
+            })
         if not facts.get("mandatory"):
             rec = answers.recommend(query_en)
             hits = rec.get("hits", [])
@@ -328,6 +549,7 @@ def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
                         "is_number": r["is_number"],
                         "effective_on": r.get("effective_on"),
                         "qco_title": r.get("qco_title"),
+                        "product_desc": r.get("product_desc"),
                         "hits": [matched_hit] + [h for h in hits if h["is_number"] != matched_hit["is_number"]],
                         "web_hits": web_hits,
                         "citations": [{
@@ -356,8 +578,17 @@ def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
         top = facts.get("_top_score", 0.0)
 
     citations = facts.get("citations", [])
-    refs = list(dict.fromkeys([c["ref"] for c in citations if "ref" in c]))
-    passport_url = f"/passport/{query_en}" if intent in ["mandate", "recommend", "passport"] else ""
+    refs = list(dict.fromkeys([
+        c["ref"] for c in citations
+        if c.get("kind") == "standard" and c.get("ref")
+    ]))
+    if facts.get("is_number"):
+        refs = [facts["is_number"]] + [ref for ref in refs if ref != facts["is_number"]]
+    grounding = answers.graph_grounding(refs, product_hint=query_en)
+    if grounding.get("available"):
+        facts["knowledge_graph"] = grounding
+    passport_url = f"/passport/{query_en}" if intent in ["mandate", "recommend", "passport"] or facts.get("product_desc") else ""
+    passport_product = facts.get("product_desc") or query_en
 
     if guard.should_abstain(top):
         refusal_answer = lang_utils.translate(guard.REFUSAL, src="en", tgt="hi") if is_hi else guard.REFUSAL
@@ -371,8 +602,10 @@ def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
             "abstained": True,
             "citations": [],
             "refs": [],
+            "grounding": grounding,
             "direct_answer": refusal_answer,
-            "passport_url": ""
+            "passport_url": "",
+            "passport_product": passport_product
         }
 
     return {
@@ -385,8 +618,10 @@ def _evaluate_query(q: str, lang: str = "en", channel: str = "web"):
         "abstained": False,
         "citations": citations,
         "refs": refs,
+        "grounding": grounding,
         "direct_answer": None,
-        "passport_url": passport_url
+        "passport_url": passport_url,
+        "passport_product": passport_product
     }
 
 
@@ -417,8 +652,10 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
             "abstained": abstained,
             "citations": citations,
             "highlight_nodes": refs,
+            "grounding": res.get("grounding", {}),
             "verification": res.get("verification"),
-            "passport_url": res["passport_url"]
+            "passport_url": res["passport_url"],
+            "passport_product": res.get("passport_product", res["query_en"])
         }
 
     # Grounded Phrasing + Hallucination Enforcer
@@ -435,7 +672,9 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
         "abstained": False,
         "citations": citations,
         "highlight_nodes": refs,
-        "passport_url": res["passport_url"]
+        "grounding": res.get("grounding", {}),
+        "passport_url": res["passport_url"],
+        "passport_product": res.get("passport_product", res["query_en"])
     }
 
 
@@ -472,7 +711,9 @@ def _chat_event_generator(q: str, lang: str = "en", channel: str = "web"):
         "intent": intent,
         "highlight_nodes": refs,
         "passport_url": passport_url,
-        "verification": res.get("verification")
+        "passport_product": res.get("passport_product", res["query_en"]),
+        "verification": res.get("verification"),
+        "grounding": res.get("grounding", {})
     }
     yield f"event: meta\ndata: {json.dumps(meta_payload)}\n\n"
     yield "event: done\ndata: {}\n\n"

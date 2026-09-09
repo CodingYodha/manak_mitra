@@ -227,7 +227,15 @@ npm run dev
 ```
 Open `http://localhost:5173` in your browser.
 
-### 6. Starting WhatsApp Channel (Optional)
+### 6. Starting Multilingual Local Voice (Optional)
+RealtimeSTT runs as an isolated Python 3.12 sidecar so its ML dependencies do not affect the main API environment:
+```bash
+./services/realtime_stt/setup.sh   # first run only
+./services/realtime_stt/start.sh
+```
+The AI Assistant microphone then provides streaming English/Hindi transcription through the main API. If the sidecar is stopped, the interface falls back to the browser's speech recognizer where available.
+
+### 7. Starting WhatsApp Channel (Optional)
 ```bash
 npm install
 node whatsapp.js
