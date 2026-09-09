@@ -479,7 +479,10 @@ def phrase(facts: Dict[str, Any], question: str) -> str:
         f"   - **Certification Scheme**: Detail the applicable BIS scheme (e.g., Compulsory Registration Scheme (CRS), ISI Mark Scheme I, FMCS, Hallmarking) and the compliance pathway.\n"
         f"   - **Recent Notifications & Sources**: Integrate relevant facts from the live web/gazette findings with official references.\n"
         f"3. STRICT GROUNDING: Never hallucinate or invent standard numbers, dates, or requirements not present in the verified facts or web sources.\n"
-        f"4. Structure the output with clean markdown bullet points or bold headings for readability."
+        f"4. FORMATTING RULES:\n"
+        f"   - Do NOT use markdown hash symbols (#, ##, ###) for headers.\n"
+        f"   - Use bold titles (e.g., **1. Mandatory Status:**) and clean bullet points or numbered lists.\n"
+        f"   - Keep URLs clean and readable."
     )
 
     # 1. Google Gemini
