@@ -6,83 +6,54 @@ export default function MarkVerifier() {
   const [inputCode, setInputCode] = useState('');
   const [purityCode, setPurityCode] = useState('916');
   const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleVerify = (e) => {
+  const handleVerify = async (e) => {
     e.preventDefault();
     const code = inputCode.trim().toUpperCase();
     if (!code) return;
 
     if (markType === 'huid') {
-      // Rule: Length 6, alphanumeric only [0-9A-Z]
-      const huidRegex = /^[0-9A-Z]{6}$/;
       const validPurity = ['375', '585', '750', '916', '958', '999'];
-
-      if (!huidRegex.test(code)) {
+      if (!validPurity.includes(purityCode)) {
         setResult({
           valid: false,
           mark: code,
           type: 'Gold Hallmark HUID',
-          reason: 'Structural syntax violation: An authentic HUID must be exactly 6 alphanumeric characters (digits 0-9 and capital letters A-Z). Spaces, symbols, or incorrect length indicate counterfeit stamping.',
-          handoff: 'Check on BIS CARE Mobile App'
-        });
-      } else if (!validPurity.includes(purityCode)) {
-        setResult({
-          valid: false,
-          mark: code,
-          type: 'Gold Hallmark HUID',
-          reason: `Invalid purity fineness code '${purityCode}'. Official BIS hallmarked gold recognizes only 375 (9K), 585 (14K), 750 (18K), 916 (22K), 958 (23K), and 999 (24K).`,
+          reason: `Invalid purity fineness code '${purityCode}'. Official BIS hallmarked gold recognizes only 375, 585, 750, 916, 958, and 999.`,
           handoff: 'Report unverified purity to DoCA'
         });
-      } else {
-        setResult({
-          valid: true,
-          mark: code,
-          purity: purityCode,
-          type: 'Gold Hallmark HUID',
-          reason: `Valid HUID structural syntax. Code "${code}" complies with BIS Hallmark formatting regulations under IS 1417 (Purity ${purityCode}).`,
-          handoff: 'For live database confirmation, verify inside the official BIS CARE mobile application.'
-        });
+        return;
       }
-    } else if (markType === 'isi') {
-      // Rule: ^CM/L-[0-9]{7}$
-      const isiRegex = /^CM\/L-[0-9]{7}$/i;
-      if (isiRegex.test(code)) {
-        setResult({
-          valid: true,
-          mark: code,
-          type: 'ISI Standard Mark Licence',
-          reason: `Valid ISI licence syntax. "${code}" follows the mandatory 7-digit CM/L license formatting required under Scheme-I.`,
-          handoff: 'Authoritative license validity can be checked on the BIS Manakonline portal.'
-        });
-      } else {
-        setResult({
-          valid: false,
-          mark: code,
-          type: 'ISI Standard Mark Licence',
-          reason: 'Invalid licence structure. Genuine BIS ISI licence numbers strictly follow the format "CM/L-XXXXXXX" (CM/L followed by a hyphen and exactly 7 numeric digits).',
-          handoff: 'Suspected fake ISI mark. File a grievance on BIS CARE.'
-        });
-      }
-    } else if (markType === 'crs') {
-      // Rule: ^R-[0-9]{8}$
-      const crsRegex = /^R-[0-9]{8}$/i;
-      if (crsRegex.test(code)) {
-        setResult({
-          valid: true,
-          mark: code,
-          type: 'CRS Registration Number',
-          reason: `Valid CRS Registration structure. "${code}" complies with MeitY / BIS Electronics Compulsory Registration format.`,
-          handoff: 'Verify registration validity on the official crsbis.in registry.'
-        });
-      } else {
-        setResult({
-          valid: false,
-          mark: code,
-          type: 'CRS Registration Number',
-          reason: 'Invalid registration format. Official CRS R-numbers must follow "R-XXXXXXXX" (the letter R followed by a hyphen and exactly 8 digits).',
-          handoff: 'Verify on crsbis.in portal.'
-        });
-      }
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`http://localhost:8000/marks/validate?code=${encodeURIComponent(code)}&mark_type=${markType}`);
+      const data = await res.json();
+      
+      let typeLabel = 'Gold Hallmark HUID';
+      if (data.mark_type === 'isi_licence' || markType === 'isi') typeLabel = 'ISI Standard Mark Licence';
+      if (data.mark_type === 'crs_rnumber' || markType === 'crs') typeLabel = 'CRS Registration Number';
+
+      setResult({
+        valid: data.valid,
+        mark: code,
+        purity: markType === 'huid' ? purityCode : undefined,
+        type: typeLabel,
+        reason: data.reason,
+        handoff: data.authoritative || data.disclaimer || 'For live database confirmation, verify inside the official BIS CARE mobile application.'
+      });
+    } catch (err) {
+      setResult({
+        valid: false,
+        mark: code,
+        type: 'Error',
+        reason: 'Could not connect to the verification server. Please ensure the backend is running.',
+        handoff: 'Check API server.'
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -167,8 +138,9 @@ export default function MarkVerifier() {
                   type="submit"
                   className="btn-primary"
                   style={{ width: '100%', padding: '10px 14px', fontSize: '14px' }}
+                  disabled={loading}
                 >
-                  Verify
+                  {loading ? 'Verifying...' : 'Verify'}
                 </button>
               </div>
             </div>
