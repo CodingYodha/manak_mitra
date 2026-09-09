@@ -50,12 +50,13 @@ def extract_city(q: str) -> str:
 @app.on_event("startup")
 def on_startup():
     store.init()
-    # Pre-load graph into memory on startup (non-fatal if not built yet)
+    # Keep the API responsive while the large graph is idle.  Graph routes load
+    # the same cached graph on first use; verifier and scheme routes need not
+    # wait for that expensive deserialisation.
     try:
         from api import graph_store
         if graph_store.is_ready():
-            graph_store.get()
-            print("[main] Knowledge graph loaded into memory")
+            print("[main] Knowledge graph will load on its first graph request")
         else:
             print("[main] graph.gpickle not found — run: python api/graph_build.py")
     except Exception as e:
@@ -209,6 +210,11 @@ async def verify_mark_endpoint(
     }
 
 
+@app.get("/api/schemes")
+def get_schemes():
+    return answers.scheme_catalog()
+
+
 # ── Graph endpoints ───────────────────────────────────────────────────────────
 @app.get("/graph")
 def get_graph(highlight: str = "", full: bool = False):
@@ -270,10 +276,15 @@ def get_labs_near(product: str = "", city: str = "", category: str = "", is_numb
     )
 
 
+@app.get("/api/labs")
+def get_lab_catalog(query: str = "", city: str = "", category: str = "", limit: int = 24):
+    return store.lab_catalog(query=query, city=city, category=category, limit=limit)
+
+
 # ── Passport endpoints ────────────────────────────────────────────────────────
 @app.get("/api/passport/{product:path}")
-def api_passport(product: str):
-    return answers.passport(product)
+def api_passport(product: str, candidate_id: Optional[int] = None, city: str = ""):
+    return answers.passport(product, candidate_id=candidate_id, city=city)
 
 
 @app.get("/passport/{product:path}")
@@ -332,4 +343,9 @@ def search_web(q: str, n: int = 3):
         "count": len(hits),
         "source": "exa.ai"
     }
+
+
+@app.get("/api/analytics")
+def analytics():
+    return store.analytics()
 

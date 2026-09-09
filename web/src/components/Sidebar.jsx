@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Home,
   MessageSquare,
   Network,
   FileText,
   ShieldCheck,
   Layers,
+  ClipboardCheck,
   FlaskConical,
   BarChart3,
   PhoneCall,
   Menu,
   X,
   ChevronsLeft,
-  Sparkles
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -61,10 +62,22 @@ export default function Sidebar({
 
   const navGroups = [
     {
+      groupTitle: 'OVERVIEW',
+      items: [
+        {
+          id: 'home',
+          label: 'Home',
+          hindi: 'होम',
+          icon: Home,
+          badge: null
+        }
+      ]
+    },
+    {
       groupTitle: 'INTELLIGENCE CORE',
       items: [
         {
-          id: 'assistant',
+          id: 'ai',
           label: 'AI Assistant',
           hindi: 'एआई सहायक',
           icon: MessageSquare,
@@ -83,11 +96,18 @@ export default function Sidebar({
       groupTitle: 'COMPLIANCE & AUDIT',
       items: [
         {
+          id: 'journey',
+          label: 'Compliance Journey',
+          hindi: 'अनुपालन यात्रा',
+          icon: ClipboardCheck,
+          badge: 'Start here'
+        },
+        {
           id: 'passport',
           label: 'Compliance Passport',
           hindi: 'अनुपालन पासपोर्ट',
           icon: FileText,
-          badge: 'Beat 3'
+          badge: null
         },
         {
           id: 'verifier',
@@ -266,33 +286,6 @@ export default function Sidebar({
               </nav>
             </div>
           ))}
-
-          {/* Quick CTA Box inside sidebar */}
-          <div className="sidebar-cta-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-              <Sparkles size={14} style={{ color: '#aa2d00' }} />
-              <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#aa2d00' }}>
-                DEMO BEAT 3
-              </span>
-            </div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-ink)', marginBottom: '4px' }}>
-              Compliance Passport
-            </div>
-            <p style={{ fontSize: '12px', color: 'var(--color-muted)', lineHeight: 1.4, marginBottom: '10px' }}>
-              Generate a 1-page legally grounded dossier for any Indian Standard.
-            </p>
-            <button
-              className="btn-primary"
-              style={{ width: '100%', padding: '9px 12px', fontSize: '12.5px', borderRadius: '8px' }}
-              onClick={() => {
-                onOpenPassport();
-                setMobileOpen(false);
-              }}
-            >
-              <FileText size={14} />
-              Open Dossier Generator
-            </button>
-          </div>
         </div>
 
         {/* Sidebar Footer: Official Helpline & Govt Attribution */}

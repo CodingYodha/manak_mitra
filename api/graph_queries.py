@@ -107,8 +107,13 @@ def products_for_lab(lab_id: str) -> list[dict]:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def labs_for_product(product: str) -> list[dict]:
     G = _G()
+    product_node = _prod_id(product)
+    # Free-text product searches need not have an explicit graph product node.
+    # Return an empty graph result and let answers.labs() use its DB fallback.
+    if product_node not in G:
+        return []
     labs: set[str] = set()
-    for std_node in G.successors(_prod_id(product)):
+    for std_node in G.successors(product_node):
         if G.nodes[std_node].get("type") != "standard":
             continue
         is_num = G.nodes[std_node].get("is_number", std_node.split(":", 1)[1])
