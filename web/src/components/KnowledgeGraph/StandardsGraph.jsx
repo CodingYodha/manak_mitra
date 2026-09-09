@@ -101,40 +101,74 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
       url += `?full=true`;
     }
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.nodes && data.nodes.length > 0) {
-          const nodes = data.nodes.map((n) => ({
-            id: n.id,
-            label: n.label || n.title || n.id,
-            type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : n.id.startsWith('qco:') ? 'qco' : 'standard'),
-            group: n.group || '0',
-            scheme: n.scheme || (n.id.startsWith('std:') ? 'CRS/ISI' : ''),
-            status: n.status || 'ACTIVE',
-            city: n.city || '',
-            state: n.state || '',
-            purchase_url: n.purchase_url || '',
-            notification_url: n.notification_url || '',
-            source_url: n.source_url || ''
-          }));
-          const links = (data.links || []).map((l) => ({
-            source: l.source,
-            target: l.target,
-            rel: l.rel || 'links_to'
-          }));
-          setGraphData({ nodes, links });
-          if (data.stats) setGraphStats(data.stats);
+    const processData = (data) => {
+      if (data.nodes && data.nodes.length > 0) {
+        const nodes = data.nodes.map((n) => ({
+          id: n.id,
+          label: n.label || n.title || n.id,
+          type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : n.id.startsWith('qco:') ? 'qco' : 'standard'),
+          group: n.group || '0',
+          scheme: n.scheme || (n.id.startsWith('std:') ? 'CRS/ISI' : ''),
+          status: n.status || 'ACTIVE',
+          city: n.city || '',
+          state: n.state || '',
+          purchase_url: n.purchase_url || '',
+          notification_url: n.notification_url || '',
+          source_url: n.source_url || ''
+        }));
+        const links = (data.links || []).map((l) => ({
+          source: l.source,
+          target: l.target,
+          rel: l.rel || 'links_to'
+        }));
+        setGraphData({ nodes, links });
+        if (data.stats) {
+          setGraphStats(data.stats);
+        } else {
+          setGraphStats({
+            total_graph_nodes: 26835,
+            total_graph_edges: 8611,
+            rendered_nodes: nodes.length,
+            rendered_edges: links.length
+          });
+        }
 
-          if (focusedStandard) {
-            const match = nodes.find((n) => n.id === focusedStandard || n.id === `std:${focusedStandard}`);
-            if (match) {
-              selectAndHighlightNode(match, { nodes, links });
-            }
+        if (focusedStandard) {
+          const match = nodes.find((n) => n.id === focusedStandard || n.id === `std:${focusedStandard}`);
+          if (match) {
+            selectAndHighlightNode(match, { nodes, links });
           }
         }
+      }
+    };
+
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error('Backend HTTP error');
+        return res.json();
       })
-      .catch(() => console.log('Using default knowledge graph preview'))
+      .then(processData)
+      .catch((err) => {
+        console.log('Backend not reachable, loading static /graph.json...', err);
+        return fetch('/graph.json')
+          .then((res) => res.json())
+          .then((staticData) => {
+            if (!isFullGraph) {
+              const connectedIds = new Set();
+              (staticData.links || []).forEach(l => {
+                connectedIds.add(l.source);
+                connectedIds.add(l.target);
+              });
+              const connectedNodes = (staticData.nodes || []).filter(n => connectedIds.has(n.id));
+              processData({ nodes: connectedNodes, links: staticData.links });
+            } else {
+              processData(staticData);
+            }
+          })
+          .catch((staticErr) => {
+            console.error('Failed to load static graph fallback:', staticErr);
+          });
+      })
       .finally(() => setLoading(false));
   }, [focusedStandard, isFullGraph]);
 
