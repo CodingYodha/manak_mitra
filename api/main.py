@@ -1,3 +1,17 @@
+import os
+import pathlib
+
+# Automatically load .env file
+_ROOT = pathlib.Path(__file__).parent.parent
+_env_file = _ROOT / ".env"
+if _env_file.exists():
+    with open(_env_file, encoding="utf-8") as _ef:
+        for _l in _ef:
+            _l = _l.strip()
+            if _l and not _l.startswith("#") and "=" in _l:
+                _k, _v = _l.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 from fastapi import FastAPI, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -138,6 +152,8 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
 
                 if qco_rows:
                     r = qco_rows[0]
+                    web_hits = rec.get("web_hits", []) or facts.get("web_hits", [])
+                    web_cits = [c for c in rec.get("citations", []) if c.get("kind") == "web"] or [c for c in facts.get("citations", []) if c.get("kind") == "web"]
                     facts = {
                         "mandatory": True,
                         "scheme": r["scheme"],
@@ -145,13 +161,14 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
                         "effective_on": r.get("effective_on"),
                         "qco_title": r.get("qco_title"),
                         "hits": [matched_hit] + [h for h in hits if h["is_number"] != matched_hit["is_number"]],
+                        "web_hits": web_hits,
                         "citations": [{
                             "kind": "qco",
                             "ref": r.get("is_number") or r.get("qco_title"),
                             "title": r.get("qco_title"),
                             "url": r.get("gazette_url"),
                             "retrieved_on": r.get("retrieved_on", "2026-09-09")
-                        }] + [c for c in rec.get("citations", []) if c.get("ref") == r.get("is_number")] + [c for c in rec.get("citations", []) if c.get("ref") != r.get("is_number")]
+                        }] + [c for c in rec.get("citations", []) if c.get("ref") == r.get("is_number")] + [c for c in rec.get("citations", []) if c.get("ref") != r.get("is_number") and c.get("kind") != "web"] + web_cits
                     }
                 else:
                     facts = rec

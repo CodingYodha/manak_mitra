@@ -142,7 +142,7 @@ export default function App() {
 
       {/* 2. MAIN SCROLLABLE CONTENT AREA */}
       <div
-        className="app-main-content"
+        className={`app-main-content ${activeTab === 'ai' ? 'chat-fullscreen-mode' : ''}`}
         style={{
           marginLeft: isSidebarOpen ? `${sidebarWidth}px` : '0px',
           width: isSidebarOpen ? `calc(100% - ${sidebarWidth}px)` : '100%'
@@ -157,31 +157,14 @@ export default function App() {
           />
         )}
 
-        {/* ── AI ASSISTANT (clean, dedicated view) ── */}
+        {/* ── AI ASSISTANT (Dedicated Fullscreen ChatGPT View) ── */}
         {activeTab === 'ai' && (
-          <section className="ai-page-wrapper">
-            <div className="container">
-              <div className="ai-page-header">
-                <div className="ai-page-header-icon">
-                  <Sparkles size={20} color="#aa2d00" />
-                </div>
-                <div>
-                  <h1 className="title-lg" style={{ marginBottom: '4px' }}>
-                    Bilingual Regulatory Query Interface
-                  </h1>
-                  <p className="body-md" style={{ color: 'var(--color-muted)' }}>
-                    Ask in Hindi or English — grounded in gazetted orders with zero hallucination.
-                    Covers QCOs, Indian Standards, testing labs, and certification schemes.
-                  </p>
-                </div>
-              </div>
-              <ChatAssistant
-                onSelectNode={handleSelectStandard}
-                onViewPassport={handleOpenPassport}
-                initialQuery={initialAssistantQuery}
-              />
-            </div>
-          </section>
+          <ChatAssistant
+            onSelectNode={handleSelectStandard}
+            onViewPassport={handleOpenPassport}
+            initialQuery={initialAssistantQuery}
+            onNavigate={handleNavigate}
+          />
         )}
 
         {/* ── STANDARDS KNOWLEDGE GRAPH ── */}
@@ -225,8 +208,8 @@ export default function App() {
           <MinistryDashboard />
         )}
 
-        {/* FOOTER */}
-        <Footer onNavigate={(tab) => setActiveTab(tab)} />
+        {/* FOOTER (Shown on other pages, hidden on AI assistant full-screen) */}
+        {activeTab !== 'ai' && <Footer onNavigate={(tab) => setActiveTab(tab)} />}
       </div>
     </div>
   );

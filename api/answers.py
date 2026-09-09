@@ -32,6 +32,17 @@ _ROOT = pathlib.Path(__file__).parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT / "api"))
 
+# Automatically load .env if present
+_env_file = _ROOT / ".env"
+if _env_file.exists():
+    with open(_env_file, encoding="utf-8") as _ef:
+        for _l in _ef:
+            _l = _l.strip()
+            if _l and not _l.startswith("#") and "=" in _l:
+                _k, _v = _l.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
+
 try:
     from api import search, store
 except ImportError:
