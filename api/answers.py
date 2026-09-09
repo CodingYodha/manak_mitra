@@ -379,9 +379,9 @@ def _call_gemini_llm(prompt: str, api_key: str) -> Optional[str]:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 200}
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 800}
         }
-        with httpx.Client(timeout=8.0) as client:
+        with httpx.Client(timeout=10.0) as client:
             resp = client.post(url, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
@@ -392,17 +392,18 @@ def _call_gemini_llm(prompt: str, api_key: str) -> Optional[str]:
 
 
 def _call_groq_llm(prompt: str, api_key: str) -> Optional[str]:
-    """Calls Groq API (e.g. LLaMA-3.1) for fast grounded generation."""
+    """Calls Groq API (e.g. LLaMA-3.3-70b) for fast, detailed grounded generation."""
     try:
+        model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {
-            "model": "llama-3.1-8b-instant",
+            "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.0,
-            "max_tokens": 150
+            "temperature": 0.1,
+            "max_tokens": 800
         }
-        with httpx.Client(timeout=8.0) as client:
+        with httpx.Client(timeout=12.0) as client:
             resp = client.post(url, headers=headers, json=payload)
             if resp.status_code == 200:
                 return resp.json()["choices"][0]["message"]["content"].strip()
@@ -419,11 +420,11 @@ def _call_azure_llm(prompt: str, api_key: str) -> Optional[str]:
         api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
         url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
 
-        with httpx.Client(timeout=8.0) as client:
+        with httpx.Client(timeout=10.0) as client:
             resp = client.post(url, headers={"api-key": api_key}, json={
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 150,
-                "temperature": 0.0
+                "max_tokens": 800,
+                "temperature": 0.1
             })
             if resp.status_code == 200:
                 return resp.json()["choices"][0]["message"]["content"].strip()
@@ -437,7 +438,7 @@ def _call_ollama_llm(prompt: str, host: str = "http://localhost:11434") -> Optio
     try:
         url = f"{host.rstrip('/')}/api/generate"
         payload = {"model": "qwen2.5:3b", "prompt": prompt, "stream": False}
-        with httpx.Client(timeout=8.0) as client:
+        with httpx.Client(timeout=10.0) as client:
             resp = client.post(url, json=payload)
             if resp.status_code == 200:
                 return resp.json().get("response", "").strip()
@@ -448,32 +449,37 @@ def _call_ollama_llm(prompt: str, host: str = "http://localhost:11434") -> Optio
 
 def phrase(facts: Dict[str, Any], question: str) -> str:
     """
-    Turns retrieved facts into a 1-2 sentence answer via LLM with strict grounding.
-    Injects web snippets from Exa into the LLM context for live BIS data.
-    Adds NO ungrounded facts. Falls back to clean deterministic phrasing.
+    Turns retrieved facts and live web search snippets into a comprehensive,
+    detailed, and strictly grounded answer via LLM.
+    Strictly forbids hallucinations while providing structured, complete context.
     """
     # Build web context block from Exa results if available
     web_hits = facts.get("web_hits", [])
     web_context = ""
     if web_hits:
         lines = []
-        for h in web_hits[:3]:
+        for h in web_hits[:4]:
             title = h.get("title", "")
             snippet = h.get("snippet", "")
             url = h.get("url", "")
             date = h.get("published_date", "")
-            lines.append(f"[WEB] {title} ({date})\n  {snippet}\n  Source: {url}")
-        web_context = "\n\nLive Web Sources (from official BIS/government domains):\n" + "\n".join(lines)
+            lines.append(f"- Title: {title} ({date})\n  Snippet: {snippet}\n  URL: {url}")
+        web_context = "\n\n### Official Live Web & Gazette Findings:\n" + "\n".join(lines)
 
     p = (
-        f"You are Manak Mitra, the official AI Assistant for Bureau of Indian Standards (BIS).\n"
-        f"Answer the user query using ONLY the following verified facts and web sources:\n{facts}{web_context}\n"
-        f"User Query: {question}\n\n"
-        f"Rules:\n"
-        f"1. Maximum two concise, polite sentences.\n"
-        f"2. Never state an IS number or standard that is not present in the facts.\n"
-        f"3. Mention applicable scheme (ISI, CRS, Hallmarking) or lab if present in facts.\n"
-        f"4. If a web source provides more recent or specific information, prefer it but cite the URL."
+        f"You are Manak Mitra, the official AI Compliance Assistant for the Bureau of Indian Standards (BIS).\n\n"
+        f"USER QUESTION: {question}\n\n"
+        f"### VERIFIED DATABASE FACTS:\n{facts}\n"
+        f"{web_context}\n\n"
+        f"INSTRUCTIONS FOR YOUR RESPONSE:\n"
+        f"1. Provide a detailed, clear, and well-structured response directly answering the user's question.\n"
+        f"2. Clearly cover all relevant aspects found in the facts:\n"
+        f"   - **Mandatory Status & Regulation**: State clearly whether certification is mandatory, referencing the specific Quality Control Order (QCO) title or ministry order if available.\n"
+        f"   - **Applicable Indian Standard(s)**: Mention the exact IS number(s) (e.g., IS 16102 (Part 1)) and product title from the facts.\n"
+        f"   - **Certification Scheme**: Detail the applicable BIS scheme (e.g., Compulsory Registration Scheme (CRS), ISI Mark Scheme I, FMCS, Hallmarking) and the compliance pathway.\n"
+        f"   - **Recent Notifications & Sources**: Integrate relevant facts from the live web/gazette findings with official references.\n"
+        f"3. STRICT GROUNDING: Never hallucinate or invent standard numbers, dates, or requirements not present in the verified facts or web sources.\n"
+        f"4. Structure the output with clean markdown bullet points or bold headings for readability."
     )
 
     # 1. Google Gemini
