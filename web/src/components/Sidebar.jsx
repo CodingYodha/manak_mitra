@@ -10,12 +10,7 @@ import {
   PhoneCall,
   Menu,
   X,
-  ExternalLink,
-  ChevronRight,
   ChevronsLeft,
-  ChevronsRight,
-  PanelLeftClose,
-  PanelLeftOpen,
   Sparkles
 } from 'lucide-react';
 
@@ -23,10 +18,8 @@ export default function Sidebar({
   activeTab,
   setActiveTab,
   onOpenPassport,
-  isCollapsed = false,
-  onToggleCollapse,
-  isSlidHidden = false,
-  onToggleSlide,
+  isOpen = true,
+  onClose,
   sidebarWidth = 270,
   isResizing = false,
   onStartResize,
@@ -35,53 +28,19 @@ export default function Sidebar({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [touchStartX, setTouchStartX] = useState(null);
 
-  // Keyboard shortcuts:
-  // Ctrl+B / Cmd+B -> Toggle collapse to icon-rail
-  // Ctrl+\ / Cmd+\ -> Slide completely off-canvas / in
+  // Keyboard shortcut: Ctrl+B / Cmd+B to toggle sidebar
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        if (onToggleCollapse) onToggleCollapse();
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === '\\' || e.key === '|')) {
-        e.preventDefault();
-        if (onToggleSlide) onToggleSlide();
+        if (onClose) onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onToggleCollapse, onToggleSlide]);
+  }, [onClose]);
 
-  // Touch edge swipe gesture: Swipe right from screen edge (<35px) slides sidebar in
-  useEffect(() => {
-    let edgeStartX = null;
-    const onEdgeTouchStart = (e) => {
-      if (e.touches[0].clientX < 35) {
-        edgeStartX = e.touches[0].clientX;
-      }
-    };
-    const onEdgeTouchEnd = (e) => {
-      if (edgeStartX !== null) {
-        const diff = e.changedTouches[0].clientX - edgeStartX;
-        if (diff > 45) {
-          if (isSlidHidden && onToggleSlide) {
-            onToggleSlide();
-          } else {
-            setMobileOpen(true);
-          }
-        }
-        edgeStartX = null;
-      }
-    };
-    window.addEventListener('touchstart', onEdgeTouchStart, { passive: true });
-    window.addEventListener('touchend', onEdgeTouchEnd, { passive: true });
-    return () => {
-      window.removeEventListener('touchstart', onEdgeTouchStart);
-      window.removeEventListener('touchend', onEdgeTouchEnd);
-    };
-  }, [isSlidHidden, onToggleSlide]);
-
-  // Handle touch swipe on sidebar: swipe left to slide closed
+  // Touch swipe handling on sidebar (swipe left to slide closed)
   const handleTouchStart = (e) => {
     setTouchStartX(e.touches[0].clientX);
   };
@@ -92,8 +51,8 @@ export default function Sidebar({
       if (diff < -50) {
         if (mobileOpen) {
           setMobileOpen(false);
-        } else if (onToggleSlide && !isSlidHidden) {
-          onToggleSlide();
+        } else if (onClose && isOpen) {
+          onClose();
         }
       }
       setTouchStartX(null);
@@ -223,113 +182,64 @@ export default function Sidebar({
         />
       )}
 
-      {/* 3. PERSISTENT FIXED SIDEBAR (Collapsible, Slidable, and Dynamically Resizable) */}
+      {/* 3. PERSISTENT FIXED SIDEBAR (Dynamically Resizable via right edge handle) */}
       <aside
-        className={`airtable-sidebar ${mobileOpen ? 'mobile-open' : ''} ${isSlidHidden ? 'slid-hidden' : ''}`}
+        className={`airtable-sidebar ${mobileOpen ? 'mobile-open' : ''} ${!isOpen ? 'sidebar-closed' : ''}`}
         style={{
-          width: isCollapsed ? 68 : isSlidHidden ? 0 : sidebarWidth
+          width: `${sidebarWidth}px`
         }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
         {/* Brand Header */}
-        <div className={`sidebar-brand-header ${isCollapsed ? 'collapsed-header' : ''}`}>
-          {!isCollapsed ? (
-            <>
-              <a
-                href="#"
-                className="nav-brand"
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleSelectTab('assistant');
-                }}
-              >
-                <div className="nav-logo-mark">M</div>
-                <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span className="nav-title">Manak Mitra</span>
-                    <span className="hindi">मानक मित्र</span>
-                  </div>
-                  <div className="sidebar-subtitle">
-                    BIS Regulatory Intelligence · SIH 2026
-                  </div>
-                </div>
-              </a>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-                {/* Desktop Collapse Toggle Button (shrink to 68px rail) */}
-                <button
-                  className="sidebar-toggle-btn"
-                  onClick={onToggleCollapse}
-                  title="Collapse sidebar to icon-rail (Ctrl+B)"
-                  aria-label="Collapse sidebar"
-                >
-                  <PanelLeftClose size={17} />
-                </button>
-
-                {/* Desktop Slide-Off Button (slide completely off-canvas) */}
-                <button
-                  className="sidebar-toggle-btn"
-                  onClick={onToggleSlide}
-                  title="Slide sidebar off-canvas (Ctrl+\)"
-                  aria-label="Slide off-canvas"
-                >
-                  <ChevronsLeft size={17} />
-                </button>
-
-                {/* Close button for mobile drawer */}
-                <button
-                  className="sidebar-mobile-close"
-                  onClick={() => setMobileOpen(false)}
-                  aria-label="Close sidebar"
-                >
-                  <X size={18} />
-                </button>
+        <div className="sidebar-brand-header">
+          <a
+            href="#"
+            className="nav-brand"
+            onClick={(e) => {
+              e.preventDefault();
+              handleSelectTab('assistant');
+            }}
+          >
+            <div className="nav-logo-mark">M</div>
+            <div style={{ minWidth: 0, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="nav-title">Manak Mitra</span>
+                <span className="hindi">मानक मित्र</span>
               </div>
-            </>
-          ) : (
-            <div className="collapsed-header-inner">
-              <div
-                className="nav-logo-mark"
-                style={{ cursor: 'pointer' }}
-                onClick={() => handleSelectTab('assistant')}
-                title="Manak Mitra मानक मित्र"
-              >
-                M
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center' }}>
-                {/* Desktop Expand Toggle Button */}
-                <button
-                  className="sidebar-toggle-btn"
-                  onClick={onToggleCollapse}
-                  title="Expand sidebar (Ctrl+B)"
-                  aria-label="Expand sidebar"
-                >
-                  <PanelLeftOpen size={17} />
-                </button>
-
-                {/* Slide completely off-canvas */}
-                <button
-                  className="sidebar-toggle-btn"
-                  onClick={onToggleSlide}
-                  title="Slide sidebar off-canvas (Ctrl+\)"
-                  aria-label="Slide off-canvas"
-                >
-                  <ChevronsLeft size={16} />
-                </button>
+              <div className="sidebar-subtitle">
+                BIS Regulatory Intelligence · SIH 2026
               </div>
             </div>
-          )}
+          </a>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            {/* Desktop Collapse Button: ONLY the ChevronsLeft (<<) button */}
+            <button
+              className="sidebar-toggle-btn"
+              onClick={onClose}
+              title="Collapse sidebar (Ctrl+B)"
+              aria-label="Collapse sidebar"
+            >
+              <ChevronsLeft size={18} />
+            </button>
+
+            {/* Close button for mobile drawer */}
+            <button
+              className="sidebar-mobile-close"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close sidebar"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Navigation Item Groups */}
         <div className="sidebar-scroll-content">
           {navGroups.map((group) => (
             <div key={group.groupTitle} className="sidebar-group">
-              {!isCollapsed && (
-                <div className="sidebar-group-title">{group.groupTitle}</div>
-              )}
+              <div className="sidebar-group-title">{group.groupTitle}</div>
               <nav className="sidebar-nav-list">
                 {group.items.map((item) => {
                   const Icon = item.icon;
@@ -337,28 +247,18 @@ export default function Sidebar({
                   return (
                     <button
                       key={item.id}
-                      className={`sidebar-item ${isActive ? 'active' : ''} ${isCollapsed ? 'collapsed-item' : ''}`}
+                      className={`sidebar-item ${isActive ? 'active' : ''}`}
                       onClick={() => handleSelectTab(item.id)}
                     >
                       <div className="sidebar-item-content">
                         <Icon size={17} className="sidebar-item-icon" />
-                        {!isCollapsed && (
-                          <span className="sidebar-item-label">{item.label}</span>
-                        )}
+                        <span className="sidebar-item-label">{item.label}</span>
                       </div>
 
-                      {!isCollapsed && item.badge && (
+                      {item.badge && (
                         <span className={`sidebar-item-badge ${isActive ? 'active-badge' : ''}`}>
                           {item.badge}
                         </span>
-                      )}
-
-                      {/* Tooltip on hover when collapsed */}
-                      {isCollapsed && (
-                        <div className="sidebar-collapsed-tooltip">
-                          <div className="tooltip-title">{item.label}</div>
-                          <div className="tooltip-sub">{item.hindi}</div>
-                        </div>
                       )}
                     </button>
                   );
@@ -368,98 +268,61 @@ export default function Sidebar({
           ))}
 
           {/* Quick CTA Box inside sidebar */}
-          {!isCollapsed ? (
-            <div className="sidebar-cta-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <Sparkles size={14} style={{ color: '#aa2d00' }} />
-                <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#aa2d00' }}>
-                  DEMO BEAT 3
-                </span>
-              </div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-ink)', marginBottom: '4px' }}>
-                Compliance Passport
-              </div>
-              <p style={{ fontSize: '12px', color: 'var(--color-muted)', lineHeight: 1.4, marginBottom: '10px' }}>
-                Generate a 1-page legally grounded dossier for any Indian Standard.
-              </p>
-              <button
-                className="btn-primary"
-                style={{ width: '100%', padding: '9px 12px', fontSize: '12.5px', borderRadius: '8px' }}
-                onClick={() => {
-                  onOpenPassport();
-                  setMobileOpen(false);
-                }}
-              >
-                <FileText size={14} />
-                Open Dossier Generator
-              </button>
+          <div className="sidebar-cta-card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+              <Sparkles size={14} style={{ color: '#aa2d00' }} />
+              <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#aa2d00' }}>
+                DEMO BEAT 3
+              </span>
             </div>
-          ) : (
-            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-              <button
-                className="sidebar-item collapsed-item"
-                style={{ background: '#fafaf9', border: '1px solid #e7e5e4' }}
-                onClick={() => {
-                  onOpenPassport();
-                  setMobileOpen(false);
-                }}
-                title="Compliance Passport (Demo Beat 3)"
-              >
-                <Sparkles size={17} style={{ color: '#aa2d00' }} />
-                <div className="sidebar-collapsed-tooltip">
-                  <div className="tooltip-title">Compliance Passport</div>
-                  <div className="tooltip-sub">Demo Beat 3 Dossier</div>
-                </div>
-              </button>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-ink)', marginBottom: '4px' }}>
+              Compliance Passport
             </div>
-          )}
+            <p style={{ fontSize: '12px', color: 'var(--color-muted)', lineHeight: 1.4, marginBottom: '10px' }}>
+              Generate a 1-page legally grounded dossier for any Indian Standard.
+            </p>
+            <button
+              className="btn-primary"
+              style={{ width: '100%', padding: '9px 12px', fontSize: '12.5px', borderRadius: '8px' }}
+              onClick={() => {
+                onOpenPassport();
+                setMobileOpen(false);
+              }}
+            >
+              <FileText size={14} />
+              Open Dossier Generator
+            </button>
+          </div>
         </div>
 
         {/* Sidebar Footer: Official Helpline & Govt Attribution */}
-        <div className={`sidebar-footer ${isCollapsed ? 'collapsed-footer' : ''}`}>
-          {!isCollapsed ? (
-            <>
-              <a href="tel:1800114000" className="sidebar-helpline-card">
-                <div className="helpline-icon-wrap">
-                  <PhoneCall size={16} />
-                </div>
-                <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                  <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 600 }}>
-                    OFFICIAL TOLL-FREE
-                  </div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-ink)' }}>
-                    1800-11-4000
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>
-                    National Consumer Helpline
-                  </div>
-                </div>
-              </a>
+        <div className="sidebar-footer">
+          <a href="tel:1800114000" className="sidebar-helpline-card">
+            <div className="helpline-icon-wrap">
+              <PhoneCall size={16} />
+            </div>
+            <div style={{ minWidth: 0, overflow: 'hidden' }}>
+              <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 600 }}>
+                OFFICIAL TOLL-FREE
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-ink)' }}>
+                1800-11-4000
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                National Consumer Helpline
+              </div>
+            </div>
+          </a>
 
-              <div className="sidebar-attribution">
-                <span>Ministry of Consumer Affairs</span>
-                <span style={{ color: '#cbd5e1' }}>·</span>
-                <span>BIS Standards</span>
-              </div>
-            </>
-          ) : (
-            <a
-              href="tel:1800114000"
-              className="btn-icon-circular"
-              style={{ width: '38px', height: '38px', margin: '0 auto', position: 'relative' }}
-              title="Official Toll-Free Helpline: 1800-11-4000"
-            >
-              <PhoneCall size={15} />
-              <div className="sidebar-collapsed-tooltip">
-                <div className="tooltip-title">Helpline 1800-11-4000</div>
-                <div className="tooltip-sub">National Consumer Helpline</div>
-              </div>
-            </a>
-          )}
+          <div className="sidebar-attribution">
+            <span>Ministry of Consumer Affairs</span>
+            <span style={{ color: '#cbd5e1' }}>·</span>
+            <span>BIS Standards</span>
+          </div>
         </div>
 
-        {/* 4. DYNAMIC EDGE RESIZE / SLIDER HANDLE (Desktop drag-to-resize) */}
-        {!isSlidHidden && (
+        {/* 4. DYNAMIC EDGE SLIDER / RESIZE HANDLE */}
+        {isOpen && (
           <div
             className={`sidebar-resize-handle ${isResizing ? 'resizing' : ''}`}
             onMouseDown={onStartResize}

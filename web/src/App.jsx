@@ -20,25 +20,17 @@ import {
   ArrowRight,
   Sparkles,
   PhoneCall,
-  PanelLeftOpen
+  ChevronsRight
 } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('assistant');
   const [focusedStandard, setFocusedStandard] = useState(null);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     try {
-      return localStorage.getItem('manak_sidebar_collapsed') === 'true';
+      return localStorage.getItem('manak_sidebar_open') !== 'false';
     } catch {
-      return false;
-    }
-  });
-
-  const [isSidebarSlidHidden, setIsSidebarSlidHidden] = useState(() => {
-    try {
-      return localStorage.getItem('manak_sidebar_hidden') === 'true';
-    } catch {
-      return false;
+      return true;
     }
   });
 
@@ -55,19 +47,14 @@ export default function App() {
 
   const [isResizing, setIsResizing] = useState(false);
 
-  // Resize drag handling across window
+  // Dynamic edge resizing across window
   useEffect(() => {
     if (!isResizing) return;
 
     const handleMouseMove = (e) => {
       const clientX = e.clientX;
-      if (clientX < 130) {
-        if (!isSidebarCollapsed) setIsSidebarCollapsed(true);
-      } else {
-        if (isSidebarCollapsed) setIsSidebarCollapsed(false);
-        const clamped = Math.max(180, Math.min(clientX, 520));
-        setSidebarWidth(clamped);
-      }
+      const clamped = Math.max(180, Math.min(clientX, 520));
+      setSidebarWidth(clamped);
     };
 
     const handleMouseUp = () => {
@@ -94,7 +81,7 @@ export default function App() {
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleMouseUp);
     };
-  }, [isResizing, isSidebarCollapsed, sidebarWidth]);
+  }, [isResizing, sidebarWidth]);
 
   const handleStartResize = (e) => {
     e.preventDefault();
@@ -103,27 +90,16 @@ export default function App() {
 
   const handleResetResize = () => {
     setSidebarWidth(270);
-    setIsSidebarCollapsed(false);
     try {
       localStorage.setItem('manak_sidebar_width', '270');
     } catch {}
   };
 
   const handleToggleSidebar = () => {
-    setIsSidebarCollapsed((prev) => {
+    setIsSidebarOpen((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem('manak_sidebar_collapsed', String(next));
-      } catch {}
-      return next;
-    });
-  };
-
-  const handleToggleSlide = () => {
-    setIsSidebarSlidHidden((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('manak_sidebar_hidden', String(next));
+        localStorage.setItem('manak_sidebar_open', String(next));
       } catch {}
       return next;
     });
@@ -142,41 +118,34 @@ export default function App() {
     setActiveTab('verifier');
   };
 
-  const currentDesktopWidth = isSidebarSlidHidden ? 0 : isSidebarCollapsed ? 68 : sidebarWidth;
-
   return (
     <div
       className={`airtable-site app-layout-with-sidebar ${
-        isSidebarCollapsed ? 'sidebar-collapsed' : ''
-      } ${isSidebarSlidHidden ? 'sidebar-slid-hidden' : ''} ${
-        isResizing ? 'sidebar-resizing' : ''
-      }`}
+        !isSidebarOpen ? 'sidebar-closed' : ''
+      } ${isResizing ? 'sidebar-resizing' : ''}`}
     >
-      {/* 1. PERSISTENT FIXED SIDEBAR (Collapsible, Slidable/Resizable, Responsive) */}
+      {/* 1. PERSISTENT FIXED SIDEBAR (Resizable & Collapsible) */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenPassport={handleOpenPassport}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={handleToggleSidebar}
-        isSlidHidden={isSidebarSlidHidden}
-        onToggleSlide={handleToggleSlide}
+        isOpen={isSidebarOpen}
+        onClose={handleToggleSidebar}
         sidebarWidth={sidebarWidth}
         isResizing={isResizing}
         onStartResize={handleStartResize}
         onResetResize={handleResetResize}
       />
 
-      {/* Floating Edge Slide-In Pill when sidebar is slid off-canvas */}
-      {isSidebarSlidHidden && (
+      {/* Floating Expand Tab (>>) when sidebar is closed */}
+      {!isSidebarOpen && (
         <button
-          className="sidebar-edge-slide-tab"
-          onClick={handleToggleSlide}
-          title="Slide open sidebar (Ctrl+\)"
-          aria-label="Slide open sidebar"
+          className="sidebar-open-tab"
+          onClick={() => setIsSidebarOpen(true)}
+          title="Expand sidebar (Ctrl+B)"
+          aria-label="Expand sidebar"
         >
-          <PanelLeftOpen size={16} />
-          <span>Menu</span>
+          <ChevronsRight size={18} />
         </button>
       )}
 
@@ -184,8 +153,8 @@ export default function App() {
       <div
         className="app-main-content"
         style={{
-          marginLeft: `${currentDesktopWidth}px`,
-          width: `calc(100% - ${currentDesktopWidth}px)`
+          marginLeft: isSidebarOpen ? `${sidebarWidth}px` : '0px',
+          width: isSidebarOpen ? `calc(100% - ${sidebarWidth}px)` : '100%'
         }}
       >
         {/* TABBED MAIN VIEWS OR FULL EDITORIAL LANDING */}

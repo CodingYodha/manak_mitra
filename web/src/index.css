@@ -286,7 +286,6 @@ h1, h2, h3, h4, h5, h6 {
     top: 0;
     left: 0;
     bottom: 0;
-    width: 270px;
     height: 100vh;
     background-color: var(--color-canvas);
     border-right: 1px solid var(--color-hairline);
@@ -294,84 +293,19 @@ h1, h2, h3, h4, h5, h6 {
     flex-direction: column;
     z-index: 1000;
     box-sizing: border-box;
-    transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: hidden;
+    transform: translateX(0);
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .airtable-sidebar.sidebar-closed {
+    transform: translateX(-100%) !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
 
   .app-main-content {
-    margin-left: 270px;
-    width: calc(100% - 270px);
     transition: margin-left 0.22s cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  /* Collapsed Desktop State */
-  .sidebar-collapsed .airtable-sidebar {
-    width: 68px;
-  }
-
-  .sidebar-collapsed .app-main-content {
-    margin-left: 68px;
-    width: calc(100% - 68px);
-  }
-
-  .sidebar-collapsed .sidebar-brand-header {
-    padding: 16px 10px;
-  }
-
-  .sidebar-collapsed .collapsed-header-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-  }
-
-  .sidebar-collapsed .sidebar-scroll-content {
-    padding: 14px 8px;
-    gap: 14px;
-    align-items: center;
-  }
-
-  .sidebar-collapsed .sidebar-group {
-    width: 100%;
-    align-items: center;
-  }
-
-  .sidebar-collapsed .sidebar-group-title {
-    display: none;
-  }
-
-  .sidebar-collapsed .sidebar-nav-list {
-    width: 100%;
-    align-items: center;
-  }
-
-  .sidebar-collapsed .sidebar-item {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    justify-content: center;
-    position: relative;
-    border-radius: 8px;
-  }
-
-  .sidebar-collapsed .sidebar-item-content {
-    justify-content: center;
-    gap: 0;
-  }
-
-  .sidebar-collapsed .sidebar-footer {
-    padding: 14px 6px;
-    align-items: center;
-  }
-
-  /* Slid-Hidden Desktop State: Sidebar slides completely off-canvas */
-  .sidebar-slid-hidden .airtable-sidebar {
-    transform: translateX(-100%) !important;
-  }
-
-  .sidebar-slid-hidden .app-main-content {
-    margin-left: 0 !important;
-    width: 100% !important;
   }
 
   .mobile-nav-bar {
@@ -768,34 +702,33 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
-/* Floating Edge Slide-In Tab when sidebar is slid off-canvas */
-.sidebar-edge-slide-tab {
+/* Floating Expand Tab (>> icon) when sidebar is closed */
+.sidebar-open-tab {
   position: fixed;
-  top: 76px;
+  top: 18px;
   left: 0;
   z-index: 1001;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 36px;
+  height: 38px;
   background-color: var(--color-canvas);
   border: 1px solid var(--color-hairline);
   border-left: none;
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
-  padding: 10px 14px 10px 10px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--color-ink);
-  font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  animation: slideInTab 0.22s ease-out;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.15s ease;
+  animation: slideInTab 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.sidebar-edge-slide-tab:hover {
+.sidebar-open-tab:hover {
   background-color: var(--color-surface-soft);
-  padding-left: 14px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  width: 40px;
+  color: var(--color-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 @keyframes slideInTab {
@@ -1496,7 +1429,8 @@ h1, h2, h3, h4, h5, h6 {
   .airtable-sidebar,
   .mobile-nav-bar,
   .sidebar-backdrop,
-  .sidebar-edge-slide-tab {
+  .sidebar-open-tab,
+  .sidebar-resize-handle {
     display: none !important;
   }
 
