@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Search, ExternalLink, Building2, Phone, CheckCircle2 } from 'lucide-react';
+import { apiUrl } from '../../config';
 
 const RECOGNISED_LABS = [
   {
@@ -59,14 +60,22 @@ const RECOGNISED_LABS = [
   }
 ];
 
-export default function LabLocator() {
+export default function LabLocator({ initialProduct = '', initialCity = '' }) {
   const [labs, setLabs] = useState(RECOGNISED_LABS);
-  const [selectedCity, setSelectedCity] = useState('ALL');
+  const [selectedCity, setSelectedCity] = useState(initialCity || 'ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialProduct);
 
   useEffect(() => {
-    fetch('http://localhost:8000/labs/near')
+    setSelectedCity(initialCity || 'ALL');
+    setSearchQuery(initialProduct);
+  }, [initialCity, initialProduct]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (initialProduct) params.set('product', initialProduct);
+    if (initialCity) params.set('city', initialCity);
+    fetch(apiUrl(`/labs/near${params.toString() ? `?${params}` : ''}`))
       .then((res) => res.json())
       .then((data) => {
         if (data.labs && data.labs.length > 0) {
@@ -86,7 +95,7 @@ export default function LabLocator() {
         }
       })
       .catch(() => console.log('Using robust lab directory'));
-  }, []);
+  }, [initialCity, initialProduct]);
 
   const filteredLabs = labs.filter((lab) => {
     const matchesCity = selectedCity === 'ALL' || lab.city.toLowerCase() === selectedCity.toLowerCase();

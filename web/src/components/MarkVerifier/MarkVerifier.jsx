@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, ExternalLink, HelpCircle, ArrowRight } from 'lucide-react';
+import { ImageUp, LoaderCircle, ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, ExternalLink, HelpCircle, ArrowRight } from 'lucide-react';
+import { apiUrl } from '../../config';
 
 export default function MarkVerifier() {
   const [markType, setMarkType] = useState('huid');
   const [inputCode, setInputCode] = useState('');
   const [purityCode, setPurityCode] = useState('916');
   const [result, setResult] = useState(null);
+  const [scanState, setScanState] = useState('');
 
   const handleVerify = (e) => {
     e.preventDefault();
@@ -86,6 +88,27 @@ export default function MarkVerifier() {
     }
   };
 
+  const handleImageScan = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setScanState('Reading mark from image…');
+    setResult(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const response = await fetch(apiUrl('/verify/mark'), { method: 'POST', body: form });
+      if (!response.ok) throw new Error('Image scan is unavailable');
+      const data = await response.json();
+      setResult({ ...data, handoff: data.handoff || 'Confirm live validity using the official BIS service.' });
+      if (data.ocr_text) setInputCode(data.ocr_text);
+      setScanState('Image scan complete. Review the result below.');
+    } catch {
+      setScanState('Image scanning needs the local API and Tesseract OCR. You can still verify a typed code below.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   return (
     <div className="container section-rhythm" style={{ paddingTop: '40px' }}>
       <div style={{ maxWidth: '840px', margin: '0 auto' }}>
@@ -126,6 +149,11 @@ export default function MarkVerifier() {
 
         {/* Form Card */}
         <div className="editorial-chat-box" style={{ padding: '28px' }}>
+          <div style={{ marginBottom: '20px', padding: '14px', borderRadius: '8px', border: '1px dashed #94a3b8', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div><strong style={{ fontSize: '13px', color: '#181d26' }}>Scan a mark label</strong><div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Upload a clear image to extract a HUID, CM/L, or CRS number using the local OCR endpoint.</div></div>
+            <label className="btn-secondary" style={{ cursor: 'pointer' }}><ImageUp size={16} /> Upload image<input type="file" accept="image/*" capture="environment" onChange={handleImageScan} style={{ display: 'none' }} /></label>
+            {scanState && <span style={{ fontSize: '12px', color: '#475569' }}>{scanState}</span>}
+          </div>
           <form onSubmit={handleVerify}>
             <div style={{ display: 'grid', gridTemplateColumns: markType === 'huid' ? '2fr 1fr 140px' : '3fr 140px', gap: '12px' }}>
               <div>

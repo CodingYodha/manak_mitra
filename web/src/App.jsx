@@ -8,6 +8,7 @@ import MarkVerifier from './components/MarkVerifier/MarkVerifier';
 import SchemeTimeline from './components/Schemes/SchemeTimeline';
 import LabLocator from './components/LabLocator/LabLocator';
 import MinistryDashboard from './components/Dashboard/MinistryDashboard';
+import ComplianceJourney from './components/ComplianceJourney';
 import Footer from './components/Footer';
 
 import {
@@ -27,6 +28,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('assistant');
   const [focusedStandard, setFocusedStandard] = useState(null);
   const [initialAssistantQuery, setInitialAssistantQuery] = useState(null);
+  const [passportProduct, setPassportProduct] = useState('led');
+  const [labContext, setLabContext] = useState({ product: '', city: '' });
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Ensure sidebar always defaults to open upon page refresh
@@ -106,7 +109,8 @@ export default function App() {
     setActiveTab('graph');
   };
 
-  const handleOpenPassport = () => {
+  const handleOpenPassport = (productId = 'led') => {
+    setPassportProduct(productId);
     setActiveTab('passport');
   };
 
@@ -261,7 +265,7 @@ export default function App() {
                     <button
                       className="btn-pill"
                       style={{ background: '#ffffff', color: '#181d26', width: '100%', justifyContent: 'center' }}
-                      onClick={handleOpenPassport}
+                      onClick={() => handleOpenPassport('led')}
                     >
                       Generate LED Passport
                     </button>
@@ -286,7 +290,7 @@ export default function App() {
                     <button
                       className="btn-pill"
                       style={{ background: '#ffffff', color: '#181d26', width: '100%', justifyContent: 'center' }}
-                      onClick={handleOpenPassport}
+                      onClick={() => handleOpenPassport('toy')}
                     >
                       Generate Toy Passport
                     </button>
@@ -311,7 +315,7 @@ export default function App() {
                     <button
                       className="btn-pill"
                       style={{ background: '#ffffff', color: '#181d26', width: '100%', justifyContent: 'center' }}
-                      onClick={handleOpenPassport}
+                      onClick={() => handleOpenPassport('gold')}
                     >
                       Generate Gold Passport
                     </button>
@@ -439,7 +443,15 @@ export default function App() {
 
       {/* Standalone Section: Compliance Passport */}
       {activeTab === 'passport' && (
-        <CompliancePassport />
+        <CompliancePassport initialProduct={passportProduct} />
+      )}
+
+      {/* Standalone Section: Guided compliance workspace */}
+      {activeTab === 'journey' && (
+        <ComplianceJourney
+          onOpenPassport={handleOpenPassport}
+          onOpenLabs={(product, city) => { setLabContext({ product, city }); setActiveTab('labs'); }}
+        />
       )}
 
       {/* Standalone Section: Mark Verifier */}
@@ -454,7 +466,7 @@ export default function App() {
 
       {/* Standalone Section: Testing Laboratories */}
       {activeTab === 'labs' && (
-        <LabLocator />
+        <LabLocator initialProduct={labContext.product} initialCity={labContext.city} />
       )}
 
       {/* Standalone Section: Ministry Dashboard */}

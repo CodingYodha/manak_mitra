@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, ShieldAlert, CheckCircle2, Globe, TrendingUp, AlertTriangle, ArrowUpRight } from 'lucide-react';
+import { apiUrl } from '../../config';
 
 export default function MinistryDashboard() {
   const [stats, setStats] = useState({ total_queries: 148, abstained: 10 });
 
   useEffect(() => {
-    fetch('http://localhost:8000/stats')
+    fetch(apiUrl('/stats'))
       .then((res) => res.json())
       .then((data) => {
         if (data.total_queries !== undefined) {

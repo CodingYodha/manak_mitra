@@ -13,6 +13,7 @@ import {
   User,
   ExternalLink
 } from 'lucide-react';
+import { apiUrl } from '../../config';
 
 const QUICK_PROMPTS = [
   { label: '💡 9W LED Bulb (CRS)', q: 'Do I need BIS certification for 9W LED bulb?' },
@@ -114,7 +115,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
 
     try {
       // 1. Try real FastAPI backend on port 8000
-      const response = await fetch(`http://localhost:8000/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`, {
+      const response = await fetch(apiUrl(`/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`), {
         method: 'POST'
       });
 

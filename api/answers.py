@@ -172,9 +172,13 @@ def labs(city: Optional[str] = None, category: Optional[str] = None,
             import graph_queries as gq  # type: ignore
         effective_product = product or category
         if effective_product and city:
-            return {"labs": gq.labs_near_for_product(effective_product, city), "citations": []}
+            graph_labs = gq.labs_near_for_product(effective_product, city)
+            if graph_labs:
+                return {"labs": graph_labs, "citations": []}
         elif effective_product:
-            return {"labs": gq.labs_for_product(effective_product)[:5], "citations": []}
+            graph_labs = gq.labs_for_product(effective_product)[:5]
+            if graph_labs:
+                return {"labs": graph_labs, "citations": []}
         elif city:
             return {"labs": gq.labs_by_city(city), "citations": []}
     except (ImportError, FileNotFoundError, AttributeError):
@@ -223,7 +227,10 @@ def passport(product: str) -> Dict[str, Any]:
     elif r.get("hits"):
         top_is = r["hits"][0]["is_number"]
 
-    sch_type = m.get("scheme", "ISI")
+    # An unmatched product has no mandate scheme. Keep the passport endpoint
+    # useful for arbitrary catalogue searches by falling back to Scheme-I
+    # guidance instead of passing None into scheme().
+    sch_type = m.get("scheme") or "ISI"
     sch = scheme(sch_type)
     l = labs(category=product, is_number=top_is)
 
