@@ -270,6 +270,11 @@ def get_labs_near(product: str = "", city: str = "", category: str = "", is_numb
     )
 
 
+@app.get("/api/labs")
+def get_lab_catalog(query: str = "", city: str = "", category: str = "", limit: int = 24):
+    return store.lab_catalog(query=query, city=city, category=category, limit=limit)
+
+
 # ── Passport endpoints ────────────────────────────────────────────────────────
 @app.get("/api/passport/{product:path}")
 def api_passport(product: str, candidate_id: Optional[int] = None, city: str = ""):

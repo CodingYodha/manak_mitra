@@ -35,7 +35,6 @@ def init():
         ingest.init_schema(c)
 
         # Check if database has been populated
-        qco_count = c.execute("SELECT count(*) FROM qco").fetchone()[0]
         prod_count = c.execute("SELECT count(*) FROM qco_items").fetchone()[0]
         lab_count = c.execute("SELECT count(*) FROM labs").fetchone()[0]
 
@@ -215,6 +214,29 @@ def get_nearest_labs(city: str = "", category: str = "", limit: int = 5) -> List
         """, (city_q, cat_q, limit)).fetchall()
 
         return [dict(r) for r in rows]
+
+
+def lab_catalog(query: str = "", city: str = "", category: str = "", limit: int = 24) -> Dict[str, Any]:
+    """Search the curated laboratory directory without inventing contact details."""
+    limit = max(1, min(limit, 100))
+    query_pattern = f"%{query.strip().lower()}%" if query.strip() else "%"
+    city_pattern = f"%{city.strip().lower()}%" if city.strip() else "%"
+    category_pattern = f"%{category.strip().lower()}%" if category.strip() else "%"
+    with conn() as c:
+        total = c.execute("SELECT count(*) FROM labs").fetchone()[0]
+        rows = c.execute("""
+            SELECT lab_id, name, city, state, categories
+            FROM labs
+            WHERE lower(city) LIKE ? AND lower(categories) LIKE ?
+              AND (lower(name) LIKE ? OR lower(city) LIKE ? OR lower(state) LIKE ? OR lower(categories) LIKE ?)
+            ORDER BY state, city, name
+            LIMIT ?
+        """, (city_pattern, category_pattern, query_pattern, query_pattern, query_pattern, query_pattern, limit)).fetchall()
+        cities = [row[0] for row in c.execute("SELECT DISTINCT city FROM labs WHERE city <> '' ORDER BY city").fetchall()]
+        category_rows = c.execute("SELECT categories FROM labs WHERE categories <> ''").fetchall()
+        categories = sorted({item.strip() for row in category_rows for item in row[0].replace(";", ",").split(",") if item.strip()})
+    return {"labs": [dict(row) for row in rows], "total_indexed": total, "cities": cities, "categories": categories,
+            "source_url": "https://lims.bis.gov.in/", "retrieved": True}
 
 
 def get_all_standards(limit: int = 300) -> List[Dict[str, Any]]:
