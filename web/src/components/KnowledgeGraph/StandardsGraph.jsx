@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Share2, Search, Filter, ExternalLink, Info, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Link2, MapPin, Layers, Building2, PackageCheck } from 'lucide-react';
+import { Share2, Search, Filter, ExternalLink, Info, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Link2, MapPin, Layers, Building2, PackageCheck, Eye, EyeOff } from 'lucide-react';
 
 const ICS_CATEGORIES = [
   { code: 'ALL', label: 'All Clusters (23,573 Standards)' },
@@ -14,13 +14,13 @@ const ICS_CATEGORIES = [
 ];
 
 const NODE_COLORS = {
-  standard: '#2563eb',   // Blue
-  product: '#16a34a',    // Green
-  lab: '#d97706',        // Amber / Orange
-  ics: '#9333ea',        // Purple
-  qco: '#dc2626',        // Red
-  scheme: '#0d9488',     // Teal
-  highlight: '#e11d48'   // Rose
+  standard: '#3b82f6',   // Blue
+  product: '#10b981',    // Emerald Green
+  lab: '#f59e0b',        // Amber
+  ics: '#a855f7',        // Purple
+  qco: '#f43f5e',        // Rose Red
+  scheme: '#14b8a6',     // Teal
+  highlight: '#ffffff'
 };
 
 const DEFAULT_GRAPH_DATA = {
@@ -60,10 +60,16 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
   const [selectedGroup, setSelectedGroup] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(DEFAULT_GRAPH_DATA.nodes[0]);
+  const [selectedLink, setSelectedLink] = useState(null);
   const [dimensions, setDimensions] = useState({ width: 700, height: 760 });
   const [isFullGraph, setIsFullGraph] = useState(false);
   const [graphStats, setGraphStats] = useState({ total_graph_nodes: 26835, total_graph_edges: 8611, rendered_nodes: 4470, rendered_edges: 8611 });
   const [loading, setLoading] = useState(false);
+
+  // Focus & Highlighting sets
+  const [highlightNodes, setHighlightNodes] = useState(new Set());
+  const [highlightLinks, setHighlightLinks] = useState(new Set());
+
   const containerRef = useRef(null);
   const fgRef = useRef(null);
 
@@ -122,7 +128,9 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
 
           if (focusedStandard) {
             const match = nodes.find((n) => n.id === focusedStandard || n.id === `std:${focusedStandard}`);
-            if (match) setSelectedNode(match);
+            if (match) {
+              selectAndHighlightNode(match, { nodes, links });
+            }
           }
         }
       })
@@ -169,51 +177,113 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
 
       if (sourceId === nodeId) {
         const targetNode = graphData.nodes.find((n) => n.id === targetId);
-        if (targetNode) neighbors.push({ node: targetNode, rel: l.rel, direction: 'outgoing' });
+        if (targetNode) neighbors.push({ node: targetNode, rel: l.rel, direction: 'outgoing', link: l });
       } else if (targetId === nodeId) {
         const sourceNode = graphData.nodes.find((n) => n.id === sourceId);
-        if (sourceNode) neighbors.push({ node: sourceNode, rel: l.rel, direction: 'incoming' });
+        if (sourceNode) neighbors.push({ node: sourceNode, rel: l.rel, direction: 'incoming', link: l });
       }
     });
     return neighbors;
   }, [selectedNode, graphData]);
 
-  // Center node on click and inspect details
-  const handleNodeClick = (node) => {
+  // Highlight a node and its 1-hop connected neighbors
+  const selectAndHighlightNode = useCallback((node, dataOverride = null) => {
+    if (!node) return;
+    const currentData = dataOverride || graphData;
+    const newHighlightNodes = new Set();
+    const newHighlightLinks = new Set();
+
+    newHighlightNodes.add(node.id);
     setSelectedNode(node);
-    if (onSelectStandard) onSelectStandard(node.id.replace('std:', ''));
-    if (fgRef.current) {
+    setSelectedLink(null);
+
+    currentData.links.forEach((l) => {
+      const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+      const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+
+      if (sourceId === node.id || targetId === node.id) {
+        newHighlightLinks.add(l);
+        newHighlightNodes.add(sourceId);
+        newHighlightNodes.add(targetId);
+      }
+    });
+
+    setHighlightNodes(newHighlightNodes);
+    setHighlightLinks(newHighlightLinks);
+
+    if (onSelectStandard && (node.type === 'standard' || node.id.startsWith('std:'))) {
+      onSelectStandard(node.id.replace('std:', ''));
+    }
+
+    if (fgRef.current && node.x !== undefined && node.y !== undefined) {
       fgRef.current.centerAt(node.x, node.y, 600);
+      fgRef.current.zoom(2.0, 600);
+    }
+  }, [graphData, onSelectStandard]);
+
+  // Highlight when a link is clicked
+  const handleLinkClick = useCallback((link) => {
+    const sourceNode = typeof link.source === 'object' ? link.source : graphData.nodes.find(n => n.id === link.source);
+    const targetNode = typeof link.target === 'object' ? link.target : graphData.nodes.find(n => n.id === link.target);
+
+    setSelectedLink(link);
+    if (sourceNode) setSelectedNode(sourceNode);
+
+    const newHighlightNodes = new Set();
+    const newHighlightLinks = new Set();
+
+    if (sourceNode) newHighlightNodes.add(sourceNode.id);
+    if (targetNode) newHighlightNodes.add(targetNode.id);
+    newHighlightLinks.add(link);
+
+    setHighlightNodes(newHighlightNodes);
+    setHighlightLinks(newHighlightLinks);
+
+    if (fgRef.current && sourceNode && targetNode && sourceNode.x !== undefined && targetNode.x !== undefined) {
+      const midX = (sourceNode.x + targetNode.x) / 2;
+      const midY = (sourceNode.y + targetNode.y) / 2;
+      fgRef.current.centerAt(midX, midY, 600);
       fgRef.current.zoom(2.2, 600);
     }
+  }, [graphData]);
+
+  // Node click handler
+  const handleNodeClick = (node) => {
+    selectAndHighlightNode(node);
   };
 
   const handleZoomIn = () => fgRef.current && fgRef.current.zoom(fgRef.current.zoom() * 1.3, 300);
   const handleZoomOut = () => fgRef.current && fgRef.current.zoom(fgRef.current.zoom() / 1.3, 300);
 
-  // Reset View: resets zoom, pan, clears search query, returns to full graph overview
+  // Reset View: resets highlight, clears search query, smoothly zooms out to full overview graph
   const handleReset = () => {
     setSearchQuery('');
     setSelectedGroup('ALL');
-    if (fgRef.current) {
-      fgRef.current.centerAt(0, 0, 600);
-      fgRef.current.zoomToFit(600, 40);
-    }
+    setSelectedLink(null);
+    setHighlightNodes(new Set());
+    setHighlightLinks(new Set());
+
     if (graphData.nodes.length > 0) {
       setSelectedNode(graphData.nodes[0]);
+    }
+
+    if (fgRef.current) {
+      fgRef.current.centerAt(0, 0, 700);
+      fgRef.current.zoomToFit(700, 40);
     }
   };
 
   return (
     <div className="editorial-chat-box" style={{ padding: '24px' }}>
+      {/* Top Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '18px' }}>
         <div>
           <h2 className="title-md" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
             <Share2 size={20} color="#181d26" />
-            Interactive BIS Knowledge Graph
+            Interactive BIS Knowledge Graph Explorer
           </h2>
           <p className="caption" style={{ marginTop: '4px' }}>
-            Powered by <strong>react-force-graph</strong>: click any node to inspect regulatory relationships, certified labs & mandates.
+            Click any node or relationship link to focus & highlight its regulatory lineage, certified testing labs, and QCO orders.
           </p>
         </div>
 
@@ -272,6 +342,11 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
           <span style={{ padding: '3px 9px', background: '#f0fdf4', color: '#166534', borderRadius: '4px', fontWeight: 600 }}>
             {graphStats.rendered_edges?.toLocaleString()} Connected Relationships
           </span>
+          {highlightNodes.size > 0 && (
+            <span style={{ padding: '3px 9px', background: '#fef3c7', color: '#92400e', borderRadius: '4px', fontWeight: 600 }}>
+              Focus: {highlightNodes.size} Highlighted Entities
+            </span>
+          )}
           {loading && <span style={{ color: '#2563eb', fontWeight: 500 }}>Refreshing graph...</span>}
         </div>
 
@@ -281,18 +356,19 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             display: 'flex',
             alignItems: 'center',
             gap: '5px',
-            background: '#f1f5f9',
+            background: '#ffffff',
             border: '1px solid #cbd5e1',
             color: '#1e293b',
-            padding: '4px 10px',
+            padding: '5px 12px',
             borderRadius: '6px',
             cursor: 'pointer',
             fontSize: '12px',
-            fontWeight: 600
+            fontWeight: 600,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
           }}
         >
           <RotateCcw size={13} />
-          Reset to Full Graph
+          Reset View to Full Graph
         </button>
       </div>
 
@@ -325,12 +401,12 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
           </div>
 
           {/* Legend Overlay */}
-          <div style={{ position: 'absolute', top: '12px', left: '12px', zIndex: 10, background: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(4px)', padding: '8px 12px', borderRadius: '6px', border: '1px solid #334155', fontSize: '11px', color: '#cbd5e1', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.standard }}></span> Standard</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.product }}></span> Product</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.lab }}></span> Lab</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.ics }}></span> ICS Sector</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.qco }}></span> QCO Order</span>
+          <div style={{ position: 'absolute', top: '12px', left: '12px', zIndex: 10, background: 'rgba(10, 15, 29, 0.90)', backdropFilter: 'blur(6px)', padding: '10px 14px', borderRadius: '8px', border: '1px solid #334155', fontSize: '11px', color: '#cbd5e1', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.standard }}></span> Standard</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.product }}></span> Product</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.lab }}></span> Lab</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.ics }}></span> ICS Sector</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.qco }}></span> QCO Order</span>
           </div>
 
           <ForceGraph2D
@@ -339,34 +415,58 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             height={dimensions.height}
             graphData={filteredData}
             nodeLabel={(n) => `${n.id}: ${n.label || ''}`}
-            nodeColor={(n) => (selectedNode && selectedNode.id === n.id ? '#ffffff' : NODE_COLORS[n.type] || '#94a3b8')}
+            nodeColor={(n) => {
+              if (selectedNode && selectedNode.id === n.id) return '#ffffff';
+              if (highlightNodes.size > 0 && !highlightNodes.has(n.id)) {
+                return '#1e293b'; // Dim unhighlighted nodes
+              }
+              return NODE_COLORS[n.type] || '#94a3b8';
+            }}
             nodeRelSize={5}
-            nodeVal={(n) => (selectedNode && selectedNode.id === n.id ? 15 : n.type === 'ics' ? 12 : n.type === 'standard' ? 8 : 6)}
-            linkColor={() => '#475569'}
-            linkWidth={1.5}
-            linkDirectionalArrowLength={3.5}
+            nodeVal={(n) => {
+              if (selectedNode && selectedNode.id === n.id) return 18;
+              if (highlightNodes.has(n.id)) return 12;
+              return n.type === 'ics' ? 10 : n.type === 'standard' ? 7 : 5;
+            }}
+            linkColor={(l) => {
+              if (highlightLinks.has(l)) return '#60a5fa'; // Glowing blue for active connections
+              if (highlightLinks.size > 0) return 'rgba(30, 41, 59, 0.15)'; // Dim unselected
+              return '#334155';
+            }}
+            linkWidth={(l) => (highlightLinks.has(l) ? 2.5 : 1.2)}
+            linkDirectionalArrowLength={(l) => (highlightLinks.has(l) ? 4.5 : 3.0)}
             linkDirectionalArrowRelPos={1}
-            linkCurvature={0.15}
-            linkDirectionalParticles={1}
-            linkDirectionalParticleSpeed={0.005}
-            linkDirectionalParticleWidth={2}
+            linkCurvature={0.12}
+            linkDirectionalParticles={(l) => (highlightLinks.has(l) ? 3 : 0)}
+            linkDirectionalParticleSpeed={0.006}
+            linkDirectionalParticleWidth={(l) => (highlightLinks.has(l) ? 3 : 1)}
             onNodeClick={handleNodeClick}
+            onLinkClick={handleLinkClick}
+            warmupTicks={50}
             cooldownTicks={100}
+            enableNodeDrag={true}
           />
         </div>
 
-        {/* Selected Entity Inspector Panel */}
+        {/* Selected Entity / Link Inspector Panel */}
         {selectedNode ? (
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '760px', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
             <div>
               {/* Header Badge */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: NODE_COLORS[selectedNode.type] || '#64748b', fontWeight: 800, letterSpacing: '0.05em' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS[selectedNode.type] || '#64748b' }}></span>
-                {selectedNode.type?.toUpperCase() || 'ENTITY'} DETAILS
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: NODE_COLORS[selectedNode.type] || '#64748b', fontWeight: 800, letterSpacing: '0.05em' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS[selectedNode.type] || '#64748b' }}></span>
+                  {selectedNode.type?.toUpperCase() || 'ENTITY'} DETAILS
+                </div>
+                {selectedLink && (
+                  <span style={{ fontSize: '10px', background: '#eff6ff', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                    Active Connection: {selectedLink.rel}
+                  </span>
+                )}
               </div>
 
               {/* Entity Title */}
-              <h3 style={{ fontSize: '18px', color: '#0f172a', marginTop: '8px', marginBottom: '8px', fontWeight: 700, lineHeight: 1.3 }}>
+              <h3 style={{ fontSize: '18px', color: '#0f172a', marginTop: '10px', marginBottom: '8px', fontWeight: 700, lineHeight: 1.3 }}>
                 {selectedNode.id}
               </h3>
 
@@ -391,12 +491,12 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                 )}
                 {selectedNode.group && selectedNode.group !== 'lab' && selectedNode.group !== 'product' && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><Info size={13} /> ICS Code:</span>
+                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><Info size={13} /> ICS Sector:</span>
                     <span style={{ color: '#0f172a', fontWeight: 600 }}>ICS {selectedNode.group}</span>
                   </div>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={13} /> Status:</span>
+                  <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={13} /> Regulatory Status:</span>
                   <span style={{ color: '#16a34a', fontWeight: 600 }}>● {selectedNode.status || 'ACTIVE'}</span>
                 </div>
               </div>
@@ -405,7 +505,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '16px', marginTop: '16px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <Link2 size={14} color="#2563eb" />
-                  Connected Graph Relationships ({selectedNodeNeighbors.length}):
+                  Connected Relationships ({selectedNodeNeighbors.length}):
                 </div>
 
                 {selectedNodeNeighbors.length > 0 ? (
@@ -413,7 +513,10 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                     {selectedNodeNeighbors.map((nb, i) => (
                       <div
                         key={i}
-                        onClick={() => handleNodeClick(nb.node)}
+                        onClick={() => {
+                          handleLinkClick(nb.link);
+                          selectAndHighlightNode(nb.node);
+                        }}
                         style={{
                           background: '#f8fafc',
                           border: '1px solid #e2e8f0',
@@ -426,10 +529,10 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                         onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#e2e8f0')}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '2px' }}>
-                          <span style={{ color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>
+                          <span style={{ color: '#2563eb', fontWeight: 700, textTransform: 'uppercase' }}>
                             {nb.rel}
                           </span>
-                          <span style={{ color: NODE_COLORS[nb.node.type] || '#2563eb', fontWeight: 700 }}>
+                          <span style={{ color: NODE_COLORS[nb.node.type] || '#64748b', fontWeight: 700 }}>
                             {nb.node.type}
                           </span>
                         </div>
