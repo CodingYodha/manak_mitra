@@ -85,7 +85,6 @@ async function classifyAndReplyCasual(query) {
         method: "POST",
         headers: {
           "api-key": process.env.AZURE_OPENAI_API_KEY,
-          "Authorization": `Bearer ${process.env.AZURE_OPENAI_API_KEY}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({

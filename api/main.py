@@ -16,7 +16,7 @@ import json
 from fastapi import FastAPI, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from api import answers, guard, store, marks, lang as lang_utils
+from api import answers, azure_openai, guard, store, marks, lang as lang_utils
 from typing import Optional
 import datetime
 import os
@@ -112,38 +112,23 @@ def classify_gatekeeper(q: str, is_hi: bool = False) -> Optional[str]:
     Evaluates queries via LLM before semantic retrieval.
     Returns direct string reply for casual/gibberish queries, or None to pass to RAG backend.
     """
-    # 1. Primary: Azure OpenAI (gpt-5.4-mini)
+    # 1. Primary: Azure OpenAI.  The shared client uses api-key and the
+    # verified max_completion_tokens parameter for the configured model.
     azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
     if azure_key:
-        try:
-            base_url = os.environ.get("AZURE_OPENAI_BASE_URL", "https://azure-ai-truxt-resource.openai.azure.com/openai/v1").rstrip("/")
-            chat_url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
-            model = os.environ.get("AZURE_OPENAI_MODEL", "gpt-5.4-mini")
-
-            for headers in [
-                {"api-key": azure_key, "Content-Type": "application/json"},
-                {"Authorization": f"Bearer {azure_key}", "Content-Type": "application/json"}
-            ]:
-                try:
-                    payload = {
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": GATEKEEPER_PROMPT},
-                            {"role": "user", "content": q}
-                        ],
-                        "max_completion_tokens": 300
-                    }
-                    with httpx.Client(timeout=8.0) as client:
-                        resp = client.post(chat_url, headers=headers, json=payload)
-                        if resp.status_code == 200:
-                            content = resp.json()["choices"][0]["message"]["content"].strip()
-                            if "[COMPLIANCE_QUERY]" in content:
-                                return None
-                            return content
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        content = azure_openai.complete(
+            [
+                {"role": "system", "content": GATEKEEPER_PROMPT},
+                {"role": "user", "content": q},
+            ],
+            api_key=azure_key,
+            max_completion_tokens=300,
+            timeout=8.0,
+        )
+        if content:
+            if "[COMPLIANCE_QUERY]" in content:
+                return None
+            return content
 
     # 2. Secondary: Groq API
     groq_key = os.environ.get("GROQ_API_KEY")
@@ -664,4 +649,3 @@ def search_web(q: str, n: int = 3):
 @app.get("/api/analytics")
 def analytics():
     return store.analytics()
-

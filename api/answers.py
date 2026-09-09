@@ -19,6 +19,7 @@ import sys
 from typing import Optional, Dict, Any, List
 import httpx
 import yaml
+from api import azure_openai
 
 # Ensure UTF-8 output on Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
@@ -508,47 +509,10 @@ def _stream_groq_llm(prompt: str, api_key: str):
 
 
 def _call_azure_llm(prompt: str, api_key: str) -> Optional[str]:
-    """Calls Azure OpenAI (e.g. gpt-5.4-mini via OpenAI-compatible v1 or deployments endpoint)."""
-    try:
-        base_url = os.environ.get("AZURE_OPENAI_BASE_URL", "").rstrip("/")
-        model = os.environ.get("AZURE_OPENAI_MODEL") or os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-5.4-mini")
-
-        # 1. OpenAI-compatible Azure v1 endpoint (e.g. https://<resource>.openai.azure.com/openai/v1)
-        if base_url:
-            chat_url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
-            for headers in [
-                {"api-key": api_key, "Content-Type": "application/json"},
-                {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-            ]:
-                try:
-                    with httpx.Client(timeout=12.0) as client:
-                        resp = client.post(chat_url, headers=headers, json={
-                            "model": model,
-                            "messages": [{"role": "user", "content": prompt}],
-                            "max_completion_tokens": 800
-                        })
-                        if resp.status_code == 200:
-                            return resp.json()["choices"][0]["message"]["content"].strip()
-                except Exception:
-                    pass
-
-        # 2. Azure Deployment endpoint fallback
-        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
-        if not endpoint and base_url:
-            endpoint = base_url.split("/openai")[0]
-        if endpoint:
-            api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-            url = f"{endpoint}/openai/deployments/{model}/chat/completions?api-version={api_version}"
-            with httpx.Client(timeout=12.0) as client:
-                resp = client.post(url, headers={"api-key": api_key}, json={
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_completion_tokens": 800
-                })
-                if resp.status_code == 200:
-                    return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        logger.warning(f"Azure OpenAI Call failed: {e}")
-    return None
+    """Generate a grounded answer through the shared Azure client."""
+    return azure_openai.complete(
+        [{"role": "user", "content": prompt}], api_key=api_key, max_completion_tokens=800
+    )
 
 
 def _call_ollama_llm(prompt: str, host: str = "http://localhost:11434") -> Optional[str]:

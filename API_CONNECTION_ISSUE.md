@@ -18,9 +18,9 @@ Calling `https://azure-ai-truxt-resource.openai.azure.com/openai/v1/chat/complet
 ```
 
 ### Cause
-The initial key had a character mismatch in the middle (`...RQQJjkj99...` vs `...RuM0JQQJ99...`):
-* ❌ **Old key:** `125Zw5Sms8k9QumCkXpSPJpQjbx9g6n1RzbEuNDFBrJDdWNeRQQJjkj99CDACHYHv6XJ3w3AAAAACOG3qIe`
-* ✅ **Working key:** `125Zw5Sms8k9QumCkXpSPJpQjbx9g6n1RzbEuNDFBrJDdWNeRuM0JQQJ99CDACHYHv6XJ3w3AAAAACOG3qIe`
+The subscription key was copied incorrectly. Keys must never be committed to
+source control or pasted into troubleshooting notes. Rotate the exposed key in
+Azure before continuing.
 
 ---
 
@@ -61,7 +61,7 @@ Azure returned:
 * **URL:** `https://azure-ai-truxt-resource.openai.azure.com/openai/v1/chat/completions`
 * **Model:** `gpt-5.4-mini`
 * **Headers:**
-  - `api-key`: `125Zw5Sms8k9QumCkXpSPJpQjbx9g6n1RzbEuNDFBrJDdWNeRuM0JQQJ99CDACHYHv6XJ3w3AAAAACOG3qIe`
+  - `api-key`: value of `AZURE_OPENAI_API_KEY` from the deployment environment
   - `Content-Type`: `application/json`
 
 ### Valid Payload Example
@@ -75,4 +75,15 @@ Azure returned:
   "max_completion_tokens": 800
 }
 ```
-This payload has been verified live and returns `HTTP 200 OK`.
+Set the following values only in an ignored `.env` file or your deployment's
+secret manager:
+
+```dotenv
+AZURE_OPENAI_API_KEY=<rotated-key>
+AZURE_OPENAI_BASE_URL=https://azure-ai-truxt-resource.openai.azure.com/openai/v1
+AZURE_OPENAI_MODEL=gpt-5.4-mini
+```
+
+The application now uses the `api-key` header, `max_completion_tokens`, and no
+custom temperature for this model. The request is covered by an offline mock
+test; a real connection requires a newly rotated key.
