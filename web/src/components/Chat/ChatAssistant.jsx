@@ -355,10 +355,6 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
       };
 
       setMessages((prev) => [...prev, botMsg]);
-
-      if (data.highlight_nodes && data.highlight_nodes.length > 0 && onSelectNode) {
-        onSelectNode(data.highlight_nodes[0]);
-      }
     } catch (err) {
       console.log('Using client-side compliance response fallback:', err);
       // 2. Intelligent client-side fallback (Guarantees demo reliability)
@@ -402,10 +398,6 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
       };
 
       setMessages((prev) => [...prev, botMsg]);
-
-      if (match.highlight_nodes && match.highlight_nodes.length > 0 && onSelectNode) {
-        onSelectNode(match.highlight_nodes[0]);
-      }
     } finally {
       setLoading(false);
     }
@@ -677,28 +669,51 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                       </div>
                     )}
 
-                    {/* Compliance Passport Callout inside Chat */}
-                    {m.passport_url && !m.abstained && (
-                      <div style={{ marginTop: '16px' }}>
-                        <button
-                          onClick={() => onViewPassport(m.product)}
-                          className="btn-pill"
-                          style={{
-                            background: '#0f172a',
-                            color: '#ffffff',
-                            border: 'none',
-                            padding: '8px 16px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            fontSize: '13px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <FileText size={14} />
-                          View Compliance Passport Dossier
-                          <ArrowRight size={14} />
-                        </button>
+                    {/* Compliance Passport & Knowledge Graph Action Callouts */}
+                    {!m.abstained && (m.passport_url || (m.highlight_nodes && m.highlight_nodes.length > 0)) && (
+                      <div style={{ marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                        {m.passport_url && (
+                          <button
+                            onClick={() => onViewPassport && onViewPassport(m.product)}
+                            className="btn-pill"
+                            style={{
+                              background: '#0f172a',
+                              color: '#ffffff',
+                              border: 'none',
+                              padding: '8px 16px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              fontSize: '13px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <FileText size={14} />
+                            View Compliance Passport Dossier
+                            <ArrowRight size={14} />
+                          </button>
+                        )}
+                        {m.highlight_nodes && m.highlight_nodes.length > 0 && onSelectNode && (
+                          <button
+                            onClick={() => onSelectNode(m.highlight_nodes[0])}
+                            className="btn-pill"
+                            style={{
+                              background: '#ffffff',
+                              color: '#0f172a',
+                              border: '1px solid #cbd5e1',
+                              padding: '8px 16px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              fontSize: '13px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Sparkles size={14} color="#ea580c" />
+                            Explore {m.highlight_nodes[0]} in 3D Graph
+                            <ArrowRight size={14} />
+                          </button>
+                        )}
                       </div>
                     )}
 
