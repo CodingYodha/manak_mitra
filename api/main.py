@@ -32,7 +32,10 @@ app.add_middleware(
 
 
 def route(q: str) -> str:
-    ql = q.lower()
+    ql = q.lower().strip()
+    # 0. Friendly greetings, pleasantries, identity queries
+    if re.search(r"^\s*(hi|hello|hey|hii+|heyy+|namaste|नमस्ते|नमस्कार|सुप्रभात|who are you|what can you do|help|thanks|thank you|धन्यवाद)\b", ql) or ql in ["hi", "hii", "hello", "hey", "heyy", "namaste", "नमस्ते"]:
+        return "greeting"
     if re.search(r"\b(passport|dossier|compliance report|पासपोर्ट)\b", ql):
         return "passport"
     if re.search(r"\b(verify|huid|hallmark|fake|counterfeit|cml|cm/l|r-number|जांच|सत्यापन|हॉलमार्क)\b", ql):
@@ -88,8 +91,46 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
     intent = route(query_en)
     city = extract_city(query_en) or extract_city(q)
 
+    # ── 0. Greeting / Conversational Intent ──────────────────────────────────
+    if intent == "greeting":
+        if is_hi:
+            greeting_text = (
+                "नमस्ते! 🙏 मैं *मानक मित्र (Manak Mitra)* हूँ — भारतीय मानक ब्यूरो (BIS), उपभोक्ता मामले मंत्रालय का आधिकारिक AI अनुपालन सहायक।\n\n"
+                "आप मुझसे निम्न के बारे में पूछ सकते हैं:\n"
+                "• अनिवार्य गुणवत्ता नियंत्रण आदेश (QCOs)\n"
+                "• भारतीय मानक (IS Numbers जैसे LED के लिए IS 16102)\n"
+                "• देश भर की 340+ मान्यता प्राप्त परीक्षण प्रयोगशालाएं\n"
+                "• प्रमाणीकरण प्रक्रियाएं एवं शुल्क (ISI, CRS, FMCS, हॉलमार्किंग)\n"
+                "• 6-अंकीय HUID हॉलमार्क एवं CM/L लाइसेंस जांच\n\n"
+                "आज मैं आपकी क्या सहायता कर सकता हूँ?"
+            )
+        else:
+            greeting_text = (
+                "Namaste! 🙏 I am Manak Mitra, your official AI Compliance Assistant for the Bureau of Indian Standards (BIS), Government of India.\n\n"
+                "Here is what I can assist you with:\n"
+                "• Mandatory Quality Control Orders (QCOs)\n"
+                "• Indian Standards (IS Numbers, e.g. IS 16102 for LED bulbs)\n"
+                "• Finding nearest accredited testing laboratories across 340+ facilities\n"
+                "• Certification schemes & fees (ISI Mark, CRS, FMCS, Hallmarking)\n"
+                "• Validating 6-digit HUID gold hallmarks & CM/L licenses\n\n"
+                "How can I help with your compliance today?"
+            )
+
+        store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=user_lang,
+                  intent=intent, matched_is=None, top_score=1.0, abstained=0)
+
+        return {
+            "answer": greeting_text,
+            "intent": intent,
+            "abstained": False,
+            "citations": [],
+            "highlight_nodes": [],
+            "verification": None,
+            "passport_url": ""
+        }
+
     # ── 1. Consumer / Mark Verification ──────────────────────────────────────
-    if intent == "consumer":
+    elif intent == "consumer":
         # Extract potential code if present in query
         code_match = re.search(r"\b([0-9A-Z]{6}|CM/L[- ]?\d{7}|R[- ]?\d{8})\b", q, re.I)
         code = code_match.group(1) if code_match else q

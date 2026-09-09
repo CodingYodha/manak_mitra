@@ -184,12 +184,18 @@ export default function KGHeroAnimation() {
     };
     animate();
 
-    // Responsive Resize Observer
+    // Responsive Resize Observer with rounding & change-guard
+    let lastW = 0;
+    let lastH = 0;
     const updateSize = (width, height) => {
-      if (width > 0 && height > 0) {
-        camera.aspect = width / height;
+      const roundedW = Math.round(width);
+      const roundedH = Math.round(height);
+      if (roundedW > 0 && roundedH > 0 && (roundedW !== lastW || roundedH !== lastH)) {
+        lastW = roundedW;
+        lastH = roundedH;
+        camera.aspect = roundedW / roundedH;
         camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
+        renderer.setSize(roundedW, roundedH, false);
       }
     };
 
@@ -368,12 +374,12 @@ export default function KGHeroAnimation() {
             </span>
           </div>
 
-          {phase === 'answered' && answerText && (
-            <div className="assistant-answer-row fade-in">
+          <div className="assistant-answer-slot">
+            <div className={`assistant-answer-row ${phase === 'answered' && answerText ? 'visible' : 'hidden'}`}>
               <span className="kg-answer-icon">✓</span>
-              <span className="assistant-answer-text">{answerText}</span>
+              <span className="assistant-answer-text">{answerText || '\u00A0'}</span>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -383,8 +389,8 @@ export default function KGHeroAnimation() {
 
         {/* Traversal Path & Legend overlay at bottom of canvas */}
         <div className="kg-hero-overlay-bottom">
-          {(phase === 'traversing' || phase === 'answered') && (
-            <div className="kg-traversal-path fade-in">
+          <div className="kg-traversal-slot">
+            <div className={`kg-traversal-path ${(phase === 'traversing' || phase === 'answered') ? 'visible' : 'hidden'}`}>
               {scenario.path.map((nodeId, i) => {
                 const node = NODES.find(n => n.id === nodeId);
                 const active = i <= traversalStep;
@@ -404,7 +410,7 @@ export default function KGHeroAnimation() {
                 );
               })}
             </div>
-          )}
+          </div>
 
           <div className="kg-hero-legend">
             {[
