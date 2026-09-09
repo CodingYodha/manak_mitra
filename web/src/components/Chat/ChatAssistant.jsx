@@ -17,7 +17,14 @@ import {
   RotateCcw,
   Globe,
   Tag,
-  FileCheck
+  FileCheck,
+  Database,
+  History,
+  Trash2,
+  X,
+  Search,
+  MessageSquare,
+  Plus
 } from 'lucide-react';
 import { apiUrl } from '../../config';
 
@@ -279,22 +286,86 @@ function FormattedMessage({ text }) {
   );
 }
 
+const STORAGE_KEY = 'manak_mitra_chat_sessions_v2';
+const ACTIVE_CHAT_KEY = 'manak_mitra_active_chat_id';
+
+const DEFAULT_BOT_MESSAGE = {
+  id: 'greeting_msg',
+  sender: 'bot',
+  text: 'Namaste! I am Manak Mitra, your official compliance assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory certification schemes, fees, or laboratory testing.',
+  citations: [],
+  abstained: false,
+  timestamp: 'Just now'
+};
+
+function formatHistoryDate(timestamp) {
+  if (!timestamp) return 'Recently';
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 3600000);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 86400000);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export default function ChatAssistant({ onSelectNode, onViewPassport, initialQuery, onNavigate }) {
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      sender: 'bot',
-      text: 'Namaste! I am Manak Mitra, your official compliance assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory certification schemes, fees, or laboratory testing.',
-      citations: [],
-      abstained: false,
-      timestamp: 'Just now'
+  // Load saved sessions containing at least one user query
+  const [sessions, setSessions] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (s) => s && s.id && Array.isArray(s.messages) && s.messages.some((m) => m.sender === 'user')
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Failed to read chat history:', e);
     }
-  ]);
+    return [];
+  });
+
+  const [activeSessionId, setActiveSessionId] = useState(() => {
+    try {
+      const savedActive = localStorage.getItem(ACTIVE_CHAT_KEY);
+      if (savedActive) return savedActive;
+    } catch {}
+    return `session_${Date.now()}`;
+  });
+
+  const [messages, setMessages] = useState(() => {
+    try {
+      const savedActive = localStorage.getItem(ACTIVE_CHAT_KEY);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (savedActive && raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const match = parsed.find((s) => s.id === savedActive);
+          if (match && Array.isArray(match.messages) && match.messages.length > 0) {
+            return match.messages;
+          }
+        }
+      }
+    } catch (e) {}
+    return [DEFAULT_BOT_MESSAGE];
+  });
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
+  const [showSavedTooltip, setShowSavedTooltip] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('idle');
   const messagesEndRef = useRef(null);
+  const processedInitialQueryRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -304,8 +375,160 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
     scrollToBottom();
   }, [messages, loading]);
 
+  // Persist sessions array to localStorage safely
+  const persistSessions = (newSessions) => {
+    try {
+      const valid = newSessions.filter(
+        (s) => s && s.id && Array.isArray(s.messages) && s.messages.some((m) => m.sender === 'user')
+      );
+      setSessions(valid);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(valid));
+    } catch (e) {
+      console.error('Failed to write chat sessions:', e);
+    }
+  };
+
+  // Helper to save finalized messages for a session
+  const saveSessionMessages = (sessionId, currentMessages, firstQueryText = null) => {
+    const hasUserMsg = currentMessages.some((m) => m.sender === 'user');
+    if (!hasUserMsg) return; // Never save empty sessions!
+
+    const firstUserMsg = currentMessages.find((m) => m.sender === 'user');
+    const autoTitle = firstQueryText || (firstUserMsg ? firstUserMsg.text : 'Compliance Inquiry');
+    const cleanTitle = autoTitle.length > 45 ? autoTitle.substring(0, 42) + '...' : autoTitle;
+
+    setSessions((prevSessions) => {
+      const existingIdx = prevSessions.findIndex((s) => s.id === sessionId);
+      let updated;
+      if (existingIdx >= 0) {
+        updated = prevSessions.map((s, idx) =>
+          idx === existingIdx
+            ? {
+                ...s,
+                title: s.title || cleanTitle,
+                updatedAt: Date.now(),
+                messages: currentMessages
+              }
+            : s
+        );
+      } else {
+        const newSession = {
+          id: sessionId,
+          title: cleanTitle,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messages: currentMessages
+        };
+        updated = [newSession, ...prevSessions];
+      }
+
+      try {
+        const valid = updated.filter(
+          (s) => s && s.id && Array.isArray(s.messages) && s.messages.some((m) => m.sender === 'user')
+        );
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(valid));
+        localStorage.setItem(ACTIVE_CHAT_KEY, sessionId);
+      } catch (e) {}
+
+      return updated;
+    });
+
+    setSaveStatus('saved');
+    setTimeout(() => setSaveStatus('idle'), 2500);
+  };
+
+  // Handle New Chat: Bulletproof against infinite chat creation
+  const handleNewChat = () => {
+    const hasUserMsg = messages.some((m) => m.sender === 'user');
+    if (!hasUserMsg) {
+      // Already on a fresh empty chat! DO NOT create another session or increment counter
+      setInput('');
+      setIsHistoryOpen(false);
+      return;
+    }
+
+    // Current chat has conversation: ensure it is saved
+    saveSessionMessages(activeSessionId, messages);
+
+    // Create fresh draft session
+    const freshId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setActiveSessionId(freshId);
+    setMessages([DEFAULT_BOT_MESSAGE]);
+    setInput('');
+    try {
+      localStorage.setItem(ACTIVE_CHAT_KEY, freshId);
+    } catch {}
+    setIsHistoryOpen(false);
+  };
+
+  const handleSelectSession = (sessionId) => {
+    if (sessionId === activeSessionId) {
+      setIsHistoryOpen(false);
+      return;
+    }
+    if (messages.some((m) => m.sender === 'user')) {
+      saveSessionMessages(activeSessionId, messages);
+    }
+    const target = sessions.find((s) => s.id === sessionId);
+    if (target && Array.isArray(target.messages)) {
+      setActiveSessionId(target.id);
+      setMessages(target.messages);
+      try {
+        localStorage.setItem(ACTIVE_CHAT_KEY, target.id);
+      } catch {}
+    }
+    setIsHistoryOpen(false);
+  };
+
+  const handleDeleteSession = (e, sessionId) => {
+    e.stopPropagation();
+    const remaining = sessions.filter((s) => s.id !== sessionId);
+    persistSessions(remaining);
+
+    if (activeSessionId === sessionId) {
+      if (remaining.length > 0) {
+        setActiveSessionId(remaining[0].id);
+        setMessages(remaining[0].messages);
+        try {
+          localStorage.setItem(ACTIVE_CHAT_KEY, remaining[0].id);
+        } catch {}
+      } else {
+        const freshId = `session_${Date.now()}`;
+        setActiveSessionId(freshId);
+        setMessages([DEFAULT_BOT_MESSAGE]);
+        try {
+          localStorage.setItem(ACTIVE_CHAT_KEY, freshId);
+        } catch {}
+      }
+    }
+  };
+
+  const handleClearAllHistory = () => {
+    if (window.confirm('Are you sure you want to delete all saved chat history on this device?')) {
+      persistSessions([]);
+      const freshId = `session_${Date.now()}`;
+      setActiveSessionId(freshId);
+      setMessages([DEFAULT_BOT_MESSAGE]);
+      try {
+        localStorage.setItem(ACTIVE_CHAT_KEY, freshId);
+      } catch {}
+      setIsHistoryOpen(false);
+    }
+  };
+
   useEffect(() => {
-    if (initialQuery) {
+    if (initialQuery && processedInitialQueryRef.current !== initialQuery) {
+      processedInitialQueryRef.current = initialQuery;
+      const hasUserMsg = messages.some((m) => m.sender === 'user');
+      if (hasUserMsg) {
+        saveSessionMessages(activeSessionId, messages);
+        const freshId = `session_${Date.now()}`;
+        setActiveSessionId(freshId);
+        setMessages([DEFAULT_BOT_MESSAGE]);
+        try {
+          localStorage.setItem(ACTIVE_CHAT_KEY, freshId);
+        } catch {}
+      }
       setInput(initialQuery);
       handleSend(initialQuery);
     }
@@ -508,20 +731,14 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
       }
     } finally {
       setLoading(false);
+      setMessages((prev) => {
+        const finalized = prev.map((m) =>
+          m.id === botMsgId ? { ...m, isStreaming: false } : m
+        );
+        saveSessionMessages(activeSessionId, finalized, q);
+        return finalized;
+      });
     }
-  };
-
-  const handleClearChat = () => {
-    setMessages([
-      {
-        id: Date.now(),
-        sender: 'bot',
-        text: 'Namaste! I am Manak Mitra, your official compliance assistant for Bureau of Indian Standards (BIS). Ask about Quality Control Orders (QCOs), Indian Standards (IS), mandatory certification schemes, fees, or laboratory testing.',
-        citations: [],
-        abstained: false,
-        timestamp: 'Just now'
-      }
-    ]);
   };
 
   const handleCopyText = (text, id) => {
@@ -579,6 +796,18 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
 
   const isInitialState = messages.length <= 1;
 
+  const savedCount = sessions.filter(
+    (s) => s && s.messages && s.messages.some((m) => m.sender === 'user')
+  ).length;
+
+  const filteredSessions = sessions.filter((s) => {
+    if (!historySearch.trim()) return true;
+    const search = historySearch.toLowerCase();
+    const titleMatch = s.title?.toLowerCase().includes(search);
+    const msgMatch = s.messages?.some((m) => m.text?.toLowerCase().includes(search));
+    return titleMatch || msgMatch;
+  });
+
   return (
     <div className="chatgpt-assistant-container">
       {/* 1. TOP BAR — Minimalist ChatGPT Header */}
@@ -624,26 +853,54 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={handleClearChat}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              fontSize: '12.5px',
-              fontWeight: 500,
-              color: '#475569',
-              cursor: 'pointer'
+        <div className="chatgpt-topbar-actions">
+          {/* Saved locally Badge */}
+          <div
+            className="chatgpt-saved-badge"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowSavedTooltip((prev) => !prev);
             }}
-            title="Start fresh chat"
+            title="All chats are stored privately on your local browser (localStorage)"
+          >
+            <Database size={13} style={{ color: '#16a34a' }} />
+            <span>Saved locally</span>
+            {saveStatus === 'saved' && <Check size={12} className="save-tick-anim" />}
+          </div>
+
+          {/* Saved Locally Tooltip / Popover */}
+          {showSavedTooltip && (
+            <div className="chatgpt-saved-tooltip-popover" onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#166534', marginBottom: '4px', fontSize: '12.5px' }}>
+                <Database size={14} /> Private Device Storage
+              </div>
+              <p style={{ margin: 0, fontSize: '11.5px', color: '#475569', lineHeight: 1.45 }}>
+                Your compliance conversations are stored securely on this device using browser <code>localStorage</code>. No chat history is saved or analyzed on remote servers.
+              </p>
+            </div>
+          )}
+
+          {/* History Button with Counter Badge */}
+          <button
+            className="chatgpt-history-btn"
+            onClick={() => setIsHistoryOpen(true)}
+            title="View chat history"
+          >
+            <History size={14} />
+            <span>History</span>
+            <span className="chatgpt-history-badge">
+              {savedCount}
+            </span>
+          </button>
+
+          {/* New Chat Button (Dark Navy) */}
+          <button
+            className="chatgpt-newchat-btn"
+            onClick={handleNewChat}
+            title="Start a fresh chat"
           >
             <RotateCcw size={13} />
-            New Chat
+            <span>New Chat</span>
           </button>
         </div>
       </div>
@@ -972,6 +1229,130 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
           </div>
         </div>
       </div>
+
+      {/* 4. CHAT HISTORY SLIDE-OVER DRAWER */}
+      {isHistoryOpen && (
+        <>
+          <div
+            className="chatgpt-history-drawer-backdrop"
+            onClick={() => setIsHistoryOpen(false)}
+          />
+          <div className="chatgpt-history-drawer">
+            <div className="chatgpt-history-drawer-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <History size={16} style={{ color: '#0f172a' }} />
+                <span style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }}>
+                  Chat History
+                </span>
+                <span className="chatgpt-history-badge" style={{ fontSize: '12px' }}>
+                  {savedCount}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  className="chatgpt-history-new-btn"
+                  onClick={handleNewChat}
+                  title="New Chat"
+                >
+                  <Plus size={14} />
+                  <span>New</span>
+                </button>
+                <button
+                  className="chatgpt-history-close-btn"
+                  onClick={() => setIsHistoryOpen(false)}
+                  title="Close history"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="chatgpt-history-search-box">
+              <Search size={14} style={{ color: '#94a3b8' }} />
+              <input
+                type="text"
+                placeholder="Search past compliance chats..."
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                className="chatgpt-history-search-input"
+              />
+              {historySearch && (
+                <button
+                  onClick={() => setHistorySearch('')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Sessions List */}
+            <div className="chatgpt-history-list">
+              {filteredSessions.length === 0 ? (
+                <div className="chatgpt-history-empty">
+                  <MessageSquare size={32} style={{ color: '#cbd5e1', marginBottom: '8px' }} />
+                  <div style={{ fontWeight: 600, color: '#64748b', fontSize: '13.5px' }}>
+                    {historySearch ? 'No matching conversations' : 'No saved conversations yet'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px', maxWidth: '240px', lineHeight: 1.4 }}>
+                    {historySearch ? 'Try searching for another product name or standard.' : 'Ask compliance questions to automatically save conversations locally on this device.'}
+                  </div>
+                </div>
+              ) : (
+                filteredSessions.map((s) => {
+                  const isActive = s.id === activeSessionId;
+                  const lastMsg = [...(s.messages || [])].reverse().find((m) => m.sender === 'bot') || s.messages?.[s.messages?.length - 1];
+                  const preview = lastMsg?.text ? (lastMsg.text.length > 75 ? lastMsg.text.substring(0, 75) + '...' : lastMsg.text) : 'No responses yet';
+                  const userMsgCount = (s.messages || []).filter((m) => m.sender === 'user').length;
+
+                  return (
+                    <div
+                      key={s.id}
+                      className={`chatgpt-history-item ${isActive ? 'active' : ''}`}
+                      onClick={() => handleSelectSession(s.id)}
+                    >
+                      <div className="chatgpt-history-item-top">
+                        <span className="chatgpt-history-item-title" title={s.title}>
+                          {s.title || 'Compliance Inquiry'}
+                        </span>
+                        <button
+                          className="chatgpt-history-item-delete"
+                          onClick={(e) => handleDeleteSession(e, s.id)}
+                          title="Delete chat from device"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                      <div className="chatgpt-history-item-preview">
+                        {preview}
+                      </div>
+                      <div className="chatgpt-history-item-meta">
+                        <span>{formatHistoryDate(s.updatedAt || s.createdAt)}</span>
+                        <span>•</span>
+                        <span>{userMsgCount} {userMsgCount === 1 ? 'query' : 'queries'}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer: Clear All History */}
+            {sessions.length > 0 && (
+              <div className="chatgpt-history-footer">
+                <button
+                  className="chatgpt-history-clear-btn"
+                  onClick={handleClearAllHistory}
+                >
+                  <Trash2 size={13} />
+                  <span>Clear all saved history</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
