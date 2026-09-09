@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
-import { Share2, Search, ExternalLink, Info, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Link2, MapPin, Layers, Sparkles, Box } from 'lucide-react';
+import { Share2, Search, ExternalLink, Info, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Link2, MapPin, Layers, Building2, PackageCheck, Sparkles, Box } from 'lucide-react';
 
 const ICS_CATEGORIES = [
   { code: 'ALL', label: 'All Clusters (23,573 Standards)' },
@@ -35,7 +35,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedLink, setSelectedLink] = useState(null);
-  const [dimensions, setDimensions] = useState({ width: 700, height: 760 });
+  const [dimensions, setDimensions] = useState({ width: 1200, height: 680 });
   const [graphStats, setGraphStats] = useState({ total_nodes: 26835, total_edges: 8611, rendered_nodes: 4470, rendered_edges: 8611 });
   const [loading, setLoading] = useState(true);
 
@@ -53,8 +53,8 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
       if (containerRef.current) {
         const { clientWidth, clientHeight } = containerRef.current;
         setDimensions({
-          width: clientWidth || 700,
-          height: clientHeight || 760
+          width: clientWidth || 1200,
+          height: clientHeight || 680
         });
       }
     };
@@ -69,7 +69,10 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     setLoading(true);
 
     fetch('/graph_3d.json')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
         if (data.nodes && data.nodes.length > 0) {
           const nodes = data.nodes.map((n) => ({
@@ -111,7 +114,38 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
         }
       })
       .catch((err) => {
-        console.error('Failed to load 3D graph layout:', err);
+        console.error('Failed to load 3D graph layout, trying fallback /graph_fast.json:', err);
+        return fetch('/graph_fast.json')
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.nodes && data.nodes.length > 0) {
+              const nodes = data.nodes.map((n) => ({
+                id: n.id,
+                label: n.label || n.title || n.id,
+                type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : n.id.startsWith('qco:') ? 'qco' : 'standard'),
+                group: n.group || '0',
+                scheme: n.scheme || (n.id.startsWith('std:') ? 'CRS/ISI' : ''),
+                status: n.status || 'ACTIVE',
+                city: n.city || '',
+                state: n.state || '',
+                purchase_url: n.purchase_url || '',
+                notification_url: n.notification_url || '',
+                source_url: n.source_url || '',
+                x: n.x,
+                y: n.y,
+                z: n.z || 0,
+                fx: n.x,
+                fy: n.y,
+                fz: n.z || 0
+              }));
+              const links = (data.links || []).map((l) => ({
+                source: typeof l.source === 'object' ? l.source.id : l.source,
+                target: typeof l.target === 'object' ? l.target.id : l.target,
+                rel: l.rel || 'links_to'
+              }));
+              setGraphData({ nodes, links });
+            }
+          });
       })
       .finally(() => {
         setLoading(false);
@@ -272,88 +306,92 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
   };
 
   return (
-    <div className="editorial-chat-box" style={{ padding: '24px' }}>
-      {/* Header Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
-        <div>
-          <h2 className="title-md" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-            <Box size={20} color="#3b82f6" />
-            3D Interactive BIS Knowledge Graph Universe
-          </h2>
-          <p className="caption" style={{ marginTop: '4px' }}>
-            Pure 3D Spatial Visualization (60 FPS): Left Drag to Rotate 360° • Right Drag to Pan • Click any sphere to focus.
-          </p>
-        </div>
-
-        {/* Filter Controls */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: '10px', top: '9px', color: '#64748b' }} />
-            <input
-              type="text"
-              placeholder="Search graph (IS, Lab, Product)..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="editorial-input"
-              style={{ paddingLeft: '30px', background: '#f8fafc', border: '1px solid #dddddd', borderRadius: '6px', fontSize: '13px', width: '230px', height: '32px' }}
-            />
+    <div style={{ padding: '24px 32px 60px', width: '100%', boxSizing: 'border-box' }}>
+      <div className="editorial-chat-box" style={{ padding: '24px' }}>
+        {/* Header Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+          <div>
+            <h2 className="title-md" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+              <Box size={20} color="#3b82f6" />
+              3D Interactive BIS Knowledge Graph Universe
+            </h2>
+            <p className="caption" style={{ marginTop: '4px' }}>
+              Pure 3D Spatial Visualization (60 FPS): Left Drag to Rotate 360° • Right Drag to Pan • Click any sphere to focus.
+            </p>
           </div>
 
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            style={{ height: '32px', padding: '0 10px', borderRadius: '6px', border: '1px solid #dddddd', background: '#f8fafc', fontSize: '12.5px', color: '#181d26' }}
+          {/* Filter Controls */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: '10px', top: '9px', color: '#64748b' }} />
+              <input
+                type="text"
+                placeholder="Search graph (IS, Lab, Product)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="editorial-input"
+                style={{ paddingLeft: '30px', background: '#f8fafc', border: '1px solid #dddddd', borderRadius: '6px', fontSize: '13px', width: '230px', height: '32px' }}
+              />
+            </div>
+
+            <select
+              value={selectedGroup}
+              onChange={(e) => setSelectedGroup(e.target.value)}
+              style={{ height: '32px', padding: '0 10px', borderRadius: '6px', border: '1px solid #dddddd', background: '#f8fafc', fontSize: '12.5px', color: '#181d26' }}
+            >
+              {ICS_CATEGORIES.map((cat) => (
+                <option key={cat.code} value={cat.code}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Stats and Reset Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', fontSize: '11.5px', color: '#64748b', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ padding: '3px 9px', background: '#eff6ff', color: '#1e40af', borderRadius: '4px', fontWeight: 600 }}>
+              {graphStats.rendered_nodes?.toLocaleString()} Active 3D Spheres
+            </span>
+            <span>•</span>
+            <span style={{ padding: '3px 9px', background: '#f0fdf4', color: '#166534', borderRadius: '4px', fontWeight: 600 }}>
+              {graphStats.rendered_edges?.toLocaleString()} Spatial Connections
+            </span>
+            <span style={{ padding: '3px 9px', background: '#fef3c7', color: '#92400e', borderRadius: '4px', fontWeight: 600 }}>
+              ⚡ Silky Smooth 60 FPS
+            </span>
+            {highlightNodeIds.size > 0 && (
+              <span style={{ padding: '3px 9px', background: '#fef3c7', color: '#92400e', borderRadius: '4px', fontWeight: 600 }}>
+                Focus: {highlightNodeIds.size} Highlighted Entities
+              </span>
+            )}
+            {loading && <span style={{ color: '#2563eb', fontWeight: 500 }}>Initializing 3D universe...</span>}
+          </div>
+
+          <button
+            onClick={handleReset}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#ffffff',
+              border: '1px solid #cbd5e1',
+              color: '#1e293b',
+              padding: '5px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 600,
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
           >
-            {ICS_CATEGORIES.map((cat) => (
-              <option key={cat.code} value={cat.code}>
-                {cat.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Stats and Reset Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', fontSize: '11.5px', color: '#64748b', flexWrap: 'wrap', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ padding: '3px 9px', background: '#eff6ff', color: '#1e40af', borderRadius: '4px', fontWeight: 600 }}>
-            {graphStats.rendered_nodes?.toLocaleString()} Active 3D Spheres
-          </span>
-          <span>•</span>
-          <span style={{ padding: '3px 9px', background: '#f0fdf4', color: '#166534', borderRadius: '4px', fontWeight: 600 }}>
-            {graphStats.rendered_edges?.toLocaleString()} Spatial Connections
-          </span>
-          <span style={{ padding: '3px 9px', background: '#fef3c7', color: '#92400e', borderRadius: '4px', fontWeight: 600 }}>
-            ⚡ Silky Smooth 60 FPS
-          </span>
-          {loading && <span style={{ color: '#2563eb', fontWeight: 500 }}>Initializing 3D universe...</span>}
+            <RotateCcw size={13} />
+            Reset 3D Camera View
+          </button>
         </div>
 
-        <button
-          onClick={handleReset}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: '#ffffff',
-            border: '1px solid #cbd5e1',
-            color: '#1e293b',
-            padding: '5px 12px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '12px',
-            fontWeight: 600,
-            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-          }}
-        >
-          <RotateCcw size={13} />
-          Reset 3D Camera View
-        </button>
-      </div>
-
-      {/* Main Visualizer & Info Panel Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '20px' }}>
-        {/* Canvas Area with ForceGraph3D */}
+        {/* 1. Full-Width 3D Knowledge Graph Canvas (Expanded across the full section) */}
         <div
           ref={containerRef}
           style={{
@@ -361,9 +399,11 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             background: '#070b14',
             borderRadius: '10px',
             overflow: 'hidden',
-            height: '760px',
+            height: '680px',
+            width: '100%',
             border: '1px solid #334155',
-            boxShadow: '0 8px 30px rgba(0,0,0,0.3)'
+            boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
+            marginBottom: '20px'
           }}
         >
           {/* Controls Overlay */}
@@ -438,68 +478,269 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
           )}
         </div>
 
-        {/* Selected Entity / Link Inspector Panel */}
+        {/* 2. Inspector / Overview Panel (Moved Below Graph) */}
         {selectedNode ? (
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '760px', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-            <div>
-              {/* Header Badge */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: NODE_COLORS[selectedNode.type] || '#64748b', fontWeight: 800, letterSpacing: '0.05em' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS[selectedNode.type] || '#64748b' }}></span>
-                  {selectedNode.type?.toUpperCase() || 'ENTITY'} DETAILS
+          <div
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '10px',
+              padding: '24px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
+            }}
+          >
+            {/* Top Header of the Inspector */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                flexWrap: 'wrap',
+                gap: '16px',
+                borderBottom: '1px solid #f1f5f9',
+                paddingBottom: '18px',
+                marginBottom: '20px'
+              }}
+            >
+              <div style={{ flex: '1 1 500px', minWidth: '280px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '11px',
+                      textTransform: 'uppercase',
+                      color: NODE_COLORS[selectedNode.type] || '#64748b',
+                      fontWeight: 800,
+                      letterSpacing: '0.06em',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      padding: '4px 10px',
+                      borderRadius: '20px'
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: NODE_COLORS[selectedNode.type] || '#64748b'
+                      }}
+                    />
+                    {selectedNode.type?.toUpperCase() || 'ENTITY'} DETAILS
+                  </div>
+
+                  {selectedLink && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        background: '#eff6ff',
+                        color: '#1d4ed8',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontWeight: 700,
+                        border: '1px solid #bfdbfe',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Link2 size={12} /> Active Connection: {selectedLink.rel}
+                    </span>
+                  )}
+
+                  {selectedNode.scheme && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        background: '#f0fdf4',
+                        color: '#166534',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontWeight: 700,
+                        border: '1px solid #bbf7d0'
+                      }}
+                    >
+                      {selectedNode.scheme} Scheme
+                    </span>
+                  )}
                 </div>
-                {selectedLink && (
-                  <span style={{ fontSize: '10px', background: '#eff6ff', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                    Active Link: {selectedLink.rel}
-                  </span>
-                )}
+
+                <h3
+                  style={{
+                    fontSize: '22px',
+                    color: '#0f172a',
+                    margin: '6px 0 8px 0',
+                    fontWeight: 700,
+                    lineHeight: 1.25
+                  }}
+                >
+                  {selectedNode.id}
+                </h3>
+
+                <p
+                  style={{
+                    fontSize: '14px',
+                    color: '#475569',
+                    lineHeight: 1.55,
+                    margin: 0,
+                    maxWidth: '880px'
+                  }}
+                >
+                  {selectedNode.label || selectedNode.title || 'No description available.'}
+                </p>
               </div>
 
-              {/* Entity Title */}
-              <h3 style={{ fontSize: '18px', color: '#0f172a', marginTop: '10px', marginBottom: '8px', fontWeight: 700, lineHeight: 1.3 }}>
-                {selectedNode.id}
-              </h3>
+              <div>
+                <a
+                  href={selectedNode.purchase_url || selectedNode.notification_url || selectedNode.source_url || 'https://standardsbis.in'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary"
+                  style={{
+                    padding: '9px 18px',
+                    fontSize: '13px',
+                    justifyContent: 'center',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    textDecoration: 'none',
+                    fontWeight: 600,
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  Inspect Official BIS Record
+                  <ExternalLink size={14} />
+                </a>
+              </div>
+            </div>
 
-              {/* Description */}
-              <p style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5, marginBottom: '16px' }}>
-                {selectedNode.label || selectedNode.title || 'No description available.'}
-              </p>
+            {/* Content Details: Regulatory Profile & Connected Relationships */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: '24px'
+              }}
+            >
+              {/* Left Column: Regulatory & Classification Attributes */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '16px 20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: '#64748b',
+                    marginBottom: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Info size={14} color="#64748b" />
+                  Regulatory & Classification Profile
+                </div>
 
-              {/* Specific Properties Table */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12.5px' }}>
-                {selectedNode.city && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={13} /> Location:</span>
-                    <strong style={{ color: '#0f172a' }}>{selectedNode.city}, {selectedNode.state}</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
+                  {selectedNode.scheme && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', paddingBottom: '8px' }}>
+                      <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Layers size={14} color="#3b82f6" /> Certification Scheme:
+                      </span>
+                      <strong style={{ color: '#0f172a' }}>{selectedNode.scheme}</strong>
+                    </div>
+                  )}
+
+                  {selectedNode.group && selectedNode.group !== 'lab' && selectedNode.group !== 'product' && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', paddingBottom: '8px' }}>
+                      <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Building2 size={14} color="#a855f7" /> ICS Sector:
+                      </span>
+                      <strong style={{ color: '#0f172a' }}>ICS {selectedNode.group}</strong>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', paddingBottom: '8px' }}>
+                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <CheckCircle2 size={14} color="#16a34a" /> Regulatory Status:
+                    </span>
+                    <span style={{ color: '#16a34a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#16a34a' }}></span>
+                      {selectedNode.status || 'ACTIVE'}
+                    </span>
                   </div>
-                )}
-                {selectedNode.scheme && (
+
+                  {selectedNode.city && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', paddingBottom: '8px' }}>
+                      <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <MapPin size={14} color="#f59e0b" /> Location:
+                      </span>
+                      <strong style={{ color: '#0f172a' }}>{selectedNode.city}, {selectedNode.state}</strong>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><Layers size={13} /> Certification Scheme:</span>
-                    <strong style={{ color: '#0f172a' }}>{selectedNode.scheme}</strong>
+                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <PackageCheck size={14} color="#64748b" /> Entity Type:
+                    </span>
+                    <span style={{ color: '#0f172a', fontWeight: 600, textTransform: 'capitalize' }}>
+                      {selectedNode.type}
+                    </span>
                   </div>
-                )}
-                {selectedNode.group && selectedNode.group !== 'lab' && selectedNode.group !== 'product' && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><Info size={13} /> ICS Sector:</span>
-                    <span style={{ color: '#0f172a', fontWeight: 600 }}>ICS {selectedNode.group}</span>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={13} /> Regulatory Status:</span>
-                  <span style={{ color: '#16a34a', fontWeight: 600 }}>● {selectedNode.status || 'ACTIVE'}</span>
                 </div>
               </div>
 
-              {/* Connected Relationships & Neighbors Section */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '16px', marginTop: '16px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Link2 size={14} color="#2563eb" />
-                  Connected Relationships ({selectedNodeNeighbors.length}):
+              {/* Right Column: Connected Relationships & Neighbors */}
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '16px 20px',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Link2 size={15} color="#2563eb" />
+                    Connected Relationships ({selectedNodeNeighbors.length}):
+                  </div>
+                  {selectedNodeNeighbors.length > 0 && (
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      Click any entity to focus graph
+                    </span>
+                  )}
                 </div>
 
                 {selectedNodeNeighbors.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '240px', overflowY: 'auto' }}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                      gap: '10px',
+                      maxHeight: '260px',
+                      overflowY: 'auto',
+                      paddingRight: '4px'
+                    }}
+                  >
                     {selectedNodeNeighbors.map((nb, i) => (
                       <div
                         key={i}
@@ -511,93 +752,104 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                           background: '#f8fafc',
                           border: '1px solid #e2e8f0',
                           borderRadius: '6px',
-                          padding: '8px 10px',
+                          padding: '10px 12px',
                           cursor: 'pointer',
                           transition: 'all 0.15s ease'
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#2563eb')}
-                        onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#2563eb';
+                          e.currentTarget.style.background = '#f0f7ff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = '#e2e8f0';
+                          e.currentTarget.style.background = '#f8fafc';
+                        }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '2px' }}>
-                          <span style={{ color: '#2563eb', fontWeight: 700, textTransform: 'uppercase' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
+                          <span style={{ color: '#2563eb', fontWeight: 700, textTransform: 'uppercase', fontSize: '10px', background: '#dbeafe', padding: '1px 6px', borderRadius: '3px' }}>
                             {nb.rel}
                           </span>
-                          <span style={{ color: NODE_COLORS[nb.node.type] || '#64748b', fontWeight: 700 }}>
+                          <span style={{ color: NODE_COLORS[nb.node.type] || '#64748b', fontWeight: 700, textTransform: 'uppercase', fontSize: '10px' }}>
                             {nb.node.type}
                           </span>
                         </div>
-                        <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 600 }}>
+                        <div style={{ fontSize: '12.5px', color: '#0f172a', fontWeight: 600, marginBottom: '2px' }}>
                           {nb.node.id}
                         </div>
-                        <div style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div style={{ fontSize: '11.5px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {nb.node.label}
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p style={{ fontSize: '11.5px', color: '#94a3b8' }}>No directly linked entities in active cluster filter.</p>
+                  <div style={{ padding: '30px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', background: '#f8fafc', borderRadius: '6px', border: '1px dashed #cbd5e1' }}>
+                    No directly linked entities in active cluster filter.
+                  </div>
                 )}
               </div>
             </div>
-
-            {/* Direct Official Link */}
-            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '14px', marginTop: '14px' }}>
-              <a
-                href={selectedNode.purchase_url || selectedNode.notification_url || selectedNode.source_url || 'https://standardsbis.in'}
-                target="_blank"
-                rel="noreferrer"
-                className="btn-secondary"
-                style={{ width: '100%', padding: '9px', fontSize: '12.5px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', textDecoration: 'none', fontWeight: 600 }}
-              >
-                Inspect Official BIS Record
-                <ExternalLink size={13} />
-              </a>
-            </div>
           </div>
         ) : (
-          /* Default Overview Panel */
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '22px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '760px', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: '#2563eb', fontWeight: 800, letterSpacing: '0.05em' }}>
-                <Box size={14} color="#2563eb" />
-                3D GRAPH UNIVERSE OVERVIEW
+          /* Default Overview Panel (Full-Width Horizontal Layout) */
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', marginBottom: '20px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: '#2563eb', fontWeight: 800, letterSpacing: '0.05em' }}>
+                  <Box size={14} color="#2563eb" />
+                  3D GRAPH UNIVERSE OVERVIEW
+                </div>
+                <h3 style={{ fontSize: '20px', color: '#0f172a', marginTop: '6px', marginBottom: '4px', fontWeight: 700 }}>
+                  BIS Standards &amp; Lab Knowledge Graph
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                  Pre-computed 3D spatial coordinates for smooth 60 FPS rotation and exploration with zero overlapping.
+                </p>
               </div>
 
-              <h3 style={{ fontSize: '18px', color: '#0f172a', marginTop: '10px', marginBottom: '8px', fontWeight: 700, lineHeight: 1.3 }}>
-                BIS Standards & Lab Knowledge Graph
-              </h3>
-
-              <p style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5, marginBottom: '18px' }}>
-                Pre-computed 3D spatial coordinates for smooth 60 FPS rotation and exploration with zero overlapping.
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12.5px' }}>
-                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontWeight: 700, color: '#1e40af', marginBottom: '4px' }}>⚡ 3 Demo Products Seeded</div>
-                  <div style={{ color: '#475569', fontSize: '12px' }}>LED Lamps (IS 16102), Children's Toys (IS 9873), and Gold Jewellery (IS 1417) are mapped to 50+ certified testing facilities.</div>
-                </div>
-
-                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontWeight: 700, color: '#166534', marginBottom: '4px' }}>🏢 338 Verified BIS Laboratories</div>
-                  <div style={{ color: '#475569', fontSize: '12px' }}>Testing facility capabilities across 95 major Indian cities with real-time Haversine proximity calculations.</div>
-                </div>
-
-                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontWeight: 700, color: '#7e22ce', marginBottom: '4px' }}>📚 ISO ICS 3-Tier Taxonomy</div>
-                  <div style={{ color: '#475569', fontSize: '12px' }}>1,382 international classification standards domains spanning Electrical, Mechanical, Food, and Jewellery sectors.</div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '14px' }}>
               <button
                 onClick={handleReset}
-                style={{ width: '100%', padding: '10px', fontSize: '12.5px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#0f172a', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
+                style={{
+                  padding: '9px 16px',
+                  fontSize: '12.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
               >
                 <Sparkles size={14} color="#60a5fa" />
                 Explore Entire 3D Network
               </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+              <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontWeight: 700, color: '#1e40af', marginBottom: '6px', fontSize: '13.5px' }}>⚡ 3 Demo Products Seeded</div>
+                <div style={{ color: '#475569', fontSize: '12.5px', lineHeight: 1.5 }}>
+                  LED Lamps (IS 16102), Children's Toys (IS 9873), and Gold Jewellery (IS 1417) are mapped to 50+ certified testing facilities.
+                </div>
+              </div>
+
+              <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontWeight: 700, color: '#166534', marginBottom: '6px', fontSize: '13.5px' }}>🏢 338 Verified BIS Laboratories</div>
+                <div style={{ color: '#475569', fontSize: '12.5px', lineHeight: 1.5 }}>
+                  Testing facility capabilities across 95 major Indian cities with real-time Haversine proximity calculations.
+                </div>
+              </div>
+
+              <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontWeight: 700, color: '#7e22ce', marginBottom: '6px', fontSize: '13.5px' }}>📚 ISO ICS 3-Tier Taxonomy</div>
+                <div style={{ color: '#475569', fontSize: '12.5px', lineHeight: 1.5 }}>
+                  1,382 international classification standards domains spanning Electrical, Mechanical, Food, and Jewellery sectors.
+                </div>
+              </div>
             </div>
           </div>
         )}
