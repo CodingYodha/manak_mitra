@@ -26,6 +26,7 @@ import {
 export default function App() {
   const [activeTab, setActiveTab] = useState('assistant');
   const [focusedStandard, setFocusedStandard] = useState(null);
+  const [initialAssistantQuery, setInitialAssistantQuery] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Ensure sidebar always defaults to open upon page refresh
