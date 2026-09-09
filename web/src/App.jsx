@@ -26,6 +26,7 @@ import {
 export default function App() {
   const [activeTab, setActiveTab] = useState('assistant');
   const [focusedStandard, setFocusedStandard] = useState(null);
+  const [initialAssistantQuery, setInitialAssistantQuery] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     try {
       return localStorage.getItem('manak_sidebar_open') !== 'false';
@@ -162,16 +163,30 @@ export default function App() {
         <>
           {/* Hero Section */}
           <Hero
-            onStartChat={() => {
+            onStartChat={(query) => {
+              if (query) {
+                setInitialAssistantQuery(query);
+              }
               const el = document.getElementById('chat-core');
-              if (el) el.scrollIntoView({ behavior: 'smooth' });
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth' });
+                const chatBox = document.querySelector('.editorial-chat-box');
+                if (chatBox) {
+                  chatBox.classList.add('chat-box-highlight');
+                  setTimeout(() => chatBox.classList.remove('chat-box-highlight'), 1200);
+                }
+                setTimeout(() => {
+                  const inputEl = document.getElementById('assistant-chat-input');
+                  if (inputEl) inputEl.focus();
+                }, 350);
+              }
             }}
             onOpenPassport={handleOpenPassport}
             onOpenVerifier={handleOpenVerifier}
           />
 
           {/* Interactive AI Assistant Core */}
-          <section id="chat-core" className="section-rhythm" style={{ paddingTop: '40px', paddingBottom: '40px' }}>
+          <section id="chat-core" className="section-rhythm" style={{ paddingTop: '28px', paddingBottom: '36px' }}>
             <div className="container">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
                 <div>
@@ -193,6 +208,7 @@ export default function App() {
               <ChatAssistant
                 onSelectNode={handleSelectStandard}
                 onViewPassport={handleOpenPassport}
+                initialQuery={initialAssistantQuery}
               />
             </div>
           </section>

@@ -63,7 +63,7 @@ const FALLBACK_ANSWERS = {
   }
 };
 
-export default function ChatAssistant({ onSelectNode, onViewPassport }) {
+export default function ChatAssistant({ onSelectNode, onViewPassport, initialQuery }) {
   const [messages, setMessages] = useState([
     {
       id: 1,
@@ -86,6 +86,13 @@ export default function ChatAssistant({ onSelectNode, onViewPassport }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (initialQuery) {
+      setInput(initialQuery);
+      handleSend(initialQuery);
+    }
+  }, [initialQuery]);
 
   const handleSend = async (queryText) => {
     const q = (queryText || input).trim();
@@ -351,6 +358,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport }) {
           </button>
 
           <input
+            id="assistant-chat-input"
             type="text"
             className="editorial-input"
             placeholder="Ask about a product, IS standard, or HSN code (e.g. 9W LED bulb, 22K gold, toys)..."
