@@ -314,104 +314,197 @@ def verify_mark(code: str, mark_type: str = "auto", purity: Optional[str] = None
         }
 
 
+def _preprocess_image_for_ocr(image):
+    """
+    Apply a multi-step preprocessing pipeline to maximise tesseract OCR accuracy on
+    small hallmark labels:
+      1. Convert to RGB (handle PNG/RGBA)
+      2. 4× upscale with Lanczos for sub-pixel detail
+      3. Greyscale → sharpen → boost contrast
+    Returns a greyscale PIL image ready for tesseract.
+    """
+    from PIL import ImageFilter, ImageEnhance, ImageOps
+    import PIL
+
+    # Ensure RGB
+    if image.mode not in ("RGB", "L"):
+        image = image.convert("RGB")
+
+    # 4× upscale – biggest single improvement for small text
+    w, h = image.size
+    image = image.resize((w * 4, h * 4), PIL.Image.LANCZOS)
+
+    # Greyscale
+    image = image.convert("L")
+
+    # Sharpen twice
+    image = image.filter(ImageFilter.SHARPEN)
+    image = image.filter(ImageFilter.SHARPEN)
+
+    # Boost contrast and brightness so thin strokes become solid black
+    image = ImageEnhance.Contrast(image).enhance(2.5)
+    image = ImageEnhance.Brightness(image).enhance(1.2)
+
+    return image
+
+
 def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
     """
-    Extracts text from an uploaded image of a mark and verifies it using a layered plausibility system.
-    Uses pytesseract.image_to_data for confidence scoring.
+    Extracts a BIS mark (HUID / ISI / CRS) from an uploaded photo using a multi-pass
+    tesseract OCR pipeline with image preprocessing.
+
+    Pipeline
+    --------
+    Pass 1 – High-quality multi-PSM run with alphanumeric whitelist on preprocessed image.
+    Pass 2 – ``image_to_data`` on raw image for fallback word-level hits.
+    Pass 3 – Regex search over the full concatenated text from both passes.
     """
     try:
         from PIL import Image
         import pytesseract
         from pytesseract import Output
 
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        # Get detailed OCR data including confidence scores
-        ocr_data = pytesseract.image_to_data(image, output_type=Output.DICT)
-        
-        full_text = []
-        candidates = []
-        
-        hallmark_context = False
-        
-        for i in range(len(ocr_data['text'])):
-            text = ocr_data['text'][i].strip()
-            conf = float(ocr_data['conf'][i])
-            
-            if not text:
-                continue
-                
-            full_text.append(text)
-            
-            # Check for context keywords
-            text_upper = text.upper()
-            if text_upper in ("IS", "BIS", "22K", "18K", "916", "750", "HALLMARK", "PURITY", "GOLD"):
-                hallmark_context = True
-                
-            # Clean punctuation noise from potential candidates
-            clean_text = re.sub(r'[^a-zA-Z0-9]', '', text)
-            
-            # If it looks like it could be a valid candidate (right length, alphanumeric)
-            if len(clean_text) == 6:
-                candidates.append({
-                    "text": clean_text,
-                    "original": text,
-                    "conf": conf if conf > 0 else 50.0
-                })
-            elif len(clean_text) >= 7 and (clean_text.startswith("CML") or text_upper.startswith("CM/L")):
-                candidates.append({"text": text_upper, "original": text, "conf": conf, "type": "isi"})
-            elif len(clean_text) >= 8 and (clean_text.startswith("R") or text_upper.startswith("R-")):
-                candidates.append({"text": text_upper, "original": text, "conf": conf, "type": "crs"})
+        raw_image = Image.open(io.BytesIO(image_bytes))
+        processed = _preprocess_image_for_ocr(raw_image)
 
-        extracted_text = " ".join(full_text)
-        logger.info(f"OCR Extracted text: {extracted_text}")
+        # ── Pass 1: whitelist-restricted multi-PSM sweeps ───────────────────
+        ALPHANUMERIC = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        PSM_CONFIGS = [
+            f"--psm 7 --oem 3 -c tessedit_char_whitelist={ALPHANUMERIC}",  # single text line
+            f"--psm 6 --oem 3 -c tessedit_char_whitelist={ALPHANUMERIC}",  # uniform block
+            f"--psm 11 --oem 3 -c tessedit_char_whitelist={ALPHANUMERIC}", # sparse text
+            f"--psm 4 --oem 3 -c tessedit_char_whitelist={ALPHANUMERIC}",  # single column
+        ]
+
+        pass1_tokens: List[Dict[str, Any]] = []  # {"text": str, "conf": float}
+        pass1_raw_strings: List[str] = []
+
+        for cfg in PSM_CONFIGS:
+            try:
+                data = pytesseract.image_to_data(processed, config=cfg, output_type=Output.DICT)
+                for i in range(len(data["text"])):
+                    word = data["text"][i].strip()
+                    conf = float(data["conf"][i])
+                    if word and conf > 0:
+                        clean = re.sub(r"[^A-Z0-9]", "", word.upper())
+                        pass1_tokens.append({"text": clean, "original": word, "conf": conf})
+                        pass1_raw_strings.append(word)
+            except Exception as inner_err:
+                logger.debug(f"OCR pass config '{cfg[:30]}' failed: {inner_err}")
+
+        # ── Pass 2: raw image word-level data (catches context keywords) ────
+        raw_data = pytesseract.image_to_data(raw_image, output_type=Output.DICT)
+        pass2_tokens: List[Dict[str, Any]] = []
+        pass2_raw_strings: List[str] = []
+        hallmark_context = False
+
+        for i in range(len(raw_data["text"])):
+            word = raw_data["text"][i].strip()
+            conf = float(raw_data["conf"][i])
+            if not word:
+                continue
+            pass2_raw_strings.append(word)
+            word_upper = word.upper()
+            if word_upper in ("IS", "BIS", "22K", "18K", "14K", "916", "750", "585",
+                              "HALLMARK", "PURITY", "GOLD", "BIS", "KARAT"):
+                hallmark_context = True
+            clean = re.sub(r"[^A-Z0-9]", "", word_upper)
+            if clean:
+                pass2_tokens.append({"text": clean, "original": word, "conf": conf if conf > 0 else 40.0})
+
+        all_tokens = pass1_tokens + pass2_tokens
+        full_text_p1 = " ".join(pass1_raw_strings)
+        full_text_p2 = " ".join(pass2_raw_strings)
+        full_text_combined = (full_text_p1 + " " + full_text_p2).strip()
+
+        logger.info(f"OCR Pass-1 text: {full_text_p1!r}")
+        logger.info(f"OCR Pass-2 text: {full_text_p2!r}")
+
+        # ── Candidate assembly ───────────────────────────────────────────────
+        candidates: List[Dict[str, Any]] = []
+
+        for tok in all_tokens:
+            clean = tok["text"]
+            conf = tok["conf"]
+            original = tok["original"]
+
+            if len(clean) == 6 and HUID_REGEX.match(clean):
+                candidates.append({"text": clean, "original": original, "conf": conf})
+            elif len(clean) == 7 and clean.isdigit():
+                candidates.append({"text": clean, "original": original, "conf": conf, "type": "isi"})
+            elif len(clean) == 8 and clean.isdigit():
+                candidates.append({"text": clean, "original": original, "conf": conf, "type": "crs"})
+            elif clean.startswith("CML") or original.upper().startswith("CM/L"):
+                candidates.append({"text": original.upper(), "original": original, "conf": conf, "type": "isi"})
+
+        # Also try sliding-window concatenation of adjacent tokens to catch
+        # split tokens like "22K" + "916" → "22K916"
+        all_clean = [t["text"] for t in all_tokens if t["text"]]
+        for j in range(len(all_clean) - 1):
+            merged = all_clean[j] + all_clean[j + 1]
+            if len(merged) == 6 and HUID_REGEX.match(merged):
+                avg_conf = (all_tokens[j]["conf"] + all_tokens[j + 1]["conf"]) / 2
+                candidates.append({"text": merged, "original": merged, "conf": avg_conf})
+            elif len(merged) == 7 and merged.isdigit():
+                avg_conf = (all_tokens[j]["conf"] + all_tokens[j + 1]["conf"]) / 2
+                candidates.append({"text": merged, "original": merged, "conf": avg_conf, "type": "isi"})
+            elif len(merged) == 8 and merged.isdigit():
+                avg_conf = (all_tokens[j]["conf"] + all_tokens[j + 1]["conf"]) / 2
+                candidates.append({"text": merged, "original": merged, "conf": avg_conf, "type": "crs"})
+
+        # ── Pass 3: regex search over concatenated full text ─────────────────
+        combined_upper = re.sub(r"[^A-Z0-9]", "", full_text_combined.upper())
+        cml_matches = re.findall(r"(?:CML)?(\d{7})", combined_upper)
+        crs_matches = re.findall(r"(?:R)?(\d{8})", combined_upper)
+        huid_matches = re.findall(r"[0-9A-Z]{6}", combined_upper)
+
+        for m in cml_matches:
+            candidates.append({"text": m, "original": m, "conf": 40.0, "type": "isi"})
+        for m in crs_matches:
+            candidates.append({"text": m, "original": m, "conf": 40.0, "type": "crs"})
+        for m in huid_matches:
+            if HUID_REGEX.match(m):
+                candidates.append({"text": m, "original": m, "conf": 40.0})
 
         if not candidates:
-            # Fallback to regex search on full text just in case words were split strangely
-            huid_matches = re.findall(r"\b[0-9A-Z]{6}\b", extracted_text.upper())
-            cml_matches = re.findall(r"(?:CM/L[- ]?)?(\d{7})", extracted_text, re.I)
-            crs_matches = re.findall(r"(?:R[- ]?)?(\d{8})", extracted_text, re.I)
-            
-            if cml_matches:
-                res = verify_isi(cml_matches[0], ocr_confidence=50.0)
-                res["ocr_text"] = extracted_text.strip()
-                return res
-            elif crs_matches:
-                res = verify_crs(crs_matches[0], ocr_confidence=50.0)
-                res["ocr_text"] = extracted_text.strip()
-                return res
-            elif huid_matches:
-                res = verify_huid(huid_matches[0], ocr_confidence=50.0, hallmark_context=hallmark_context)
-                res["ocr_text"] = extracted_text.strip()
-                return res
-            else:
-                return {
-                    "status": "not_detected",
-                    "valid": False,
-                    "verified": False,
-                    "mark_type": "Image OCR Scan",
-                    "code": "Not detected",
-                    "confidence": 0.0,
-                    "ocr_text": extracted_text.strip() or "No text recognized",
-                    "reason": "Could not detect a clear 6-character HUID, 7-digit CM/L licence, or 8-digit CRS number from the image. Note: Pre-2021 hallmarks do not contain HUID codes.",
-                    "disclaimer": "Absence of a HUID in old hallmarks does not imply it is counterfeit.",
-                    "official_handoff": "Upload a higher-resolution photo or check manually in the BIS CARE app.",
-                    "citations": []
-                }
-        
-        # Process the best candidate
-        # Sort by confidence
-        candidates.sort(key=lambda x: x["conf"], reverse=True)
-        best_candidate = candidates[0]
-        
-        if best_candidate.get("type") == "isi":
-            res = verify_isi(best_candidate["text"], ocr_confidence=best_candidate["conf"])
-        elif best_candidate.get("type") == "crs":
-            res = verify_crs(best_candidate["text"], ocr_confidence=best_candidate["conf"])
+            return {
+                "status": "not_detected",
+                "valid": False,
+                "verified": False,
+                "mark_type": "Image OCR Scan",
+                "code": "Not detected",
+                "confidence": 0.0,
+                "ocr_text": full_text_combined or "No text recognized",
+                "reason": (
+                    "Could not detect a clear 6-character HUID, 7-digit CM/L licence, or 8-digit CRS number "
+                    "from the image. Ensure the mark is well-lit, in focus, and fills most of the frame. "
+                    "Note: Pre-2021 hallmarks do not contain HUID codes."
+                ),
+                "disclaimer": "Absence of a HUID in old hallmarks does not imply it is counterfeit.",
+                "official_handoff": "Upload a higher-resolution photo or check manually in the BIS CARE app.",
+                "citations": []
+            }
+
+        # De-duplicate and pick best by confidence
+        seen: set = set()
+        unique_candidates = []
+        for c in candidates:
+            key = (c["text"], c.get("type", "huid"))
+            if key not in seen:
+                seen.add(key)
+                unique_candidates.append(c)
+
+        unique_candidates.sort(key=lambda x: x["conf"], reverse=True)
+        best = unique_candidates[0]
+
+        if best.get("type") == "isi":
+            res = verify_isi(best["text"], ocr_confidence=best["conf"])
+        elif best.get("type") == "crs":
+            res = verify_crs(best["text"], ocr_confidence=best["conf"])
         else:
-            res = verify_huid(best_candidate["text"], ocr_confidence=best_candidate["conf"], hallmark_context=hallmark_context)
-            
-        res["ocr_text"] = extracted_text.strip()
+            res = verify_huid(best["text"], ocr_confidence=best["conf"], hallmark_context=hallmark_context)
+
+        res["ocr_text"] = full_text_combined.strip()
         return res
         
     except ImportError:
