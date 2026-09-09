@@ -963,22 +963,22 @@ h1, h2, h3, h4, h5, h6 {
   flex-wrap: wrap;
 }
 
-/* Small AI Box in Hero */
+/* Small AI Box in Hero: Airtable Warm Editorial Cream Canvas */
 .hero-mini-ai-box {
-  background-color: var(--color-canvas);
-  border: 1px solid var(--color-hairline);
+  background-color: #faf7f2; /* Airtable Signature Warm Cream */
+  border: 1px solid #e7dfd2;
   border-radius: var(--radius-lg);
-  padding: 22px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+  padding: 22px 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
   cursor: pointer;
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease;
   position: relative;
 }
 
 .hero-mini-ai-box:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.08);
-  border-color: #cbd5e1;
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.07);
+  border-color: #d6ccbd;
 }
 
 .hero-mini-ai-header {
@@ -998,14 +998,16 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .mini-ai-icon-mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  background-color: var(--color-surface-soft);
-  border: 1px solid var(--color-hairline);
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background-color: #ffffff;
+  border: 1px solid #e6ded2;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #aa2d00; /* Signature Coral */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .hero-mini-ai-badge {
@@ -1014,11 +1016,12 @@ h1, h2, h3, h4, h5, h6 {
   gap: 5px;
   font-size: 11px;
   font-weight: 500;
-  color: #15803d;
-  background-color: #f0fdf4;
+  color: #166534;
+  background-color: #ffffff;
   border: 1px solid #bbf7d0;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .hero-mini-ai-badge .live-dot {
@@ -1032,18 +1035,18 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: var(--color-surface-soft);
-  border: 1px solid var(--color-hairline);
+  background-color: #ffffff;
+  border: 1px solid #e0d8cb;
   border-radius: var(--radius-md);
   padding: 11px 14px;
   margin-bottom: 12px;
   font-size: 13.5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   transition: all 0.15s ease;
 }
 
 .hero-mini-ai-box:hover .hero-mini-ai-input-preview {
-  background-color: #ffffff;
-  border-color: #94a3b8;
+  border-color: #181d26;
 }
 
 .mini-ask-btn {
@@ -1052,10 +1055,11 @@ h1, h2, h3, h4, h5, h6 {
   gap: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-on-primary);
+  color: #ffffff;
   background-color: var(--color-primary);
-  padding: 5px 10px;
+  padding: 6px 12px;
   border-radius: 6px;
+  transition: background-color 0.15s ease;
 }
 
 .hero-mini-ai-chips {
@@ -1067,14 +1071,16 @@ h1, h2, h3, h4, h5, h6 {
 
 .hero-mini-ai-chip {
   background-color: #ffffff;
-  border: 1px solid var(--color-hairline);
+  border: 1px solid #e2dbce;
   border-radius: var(--radius-pill);
-  padding: 4px 10px;
+  padding: 5px 11px;
   font-size: 11.5px;
-  color: var(--color-body);
+  color: var(--color-ink);
   cursor: pointer;
   transition: all 0.15s ease;
   font-family: var(--font-body);
+  font-weight: 450;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .hero-mini-ai-chip:hover {
@@ -1087,8 +1093,8 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-top: 10px;
-  border-top: 1px solid var(--color-hairline-light);
+  padding-top: 12px;
+  border-top: 1px solid #e8e2d5;
   font-size: 11.5px;
   color: #64748b;
 }
@@ -1098,7 +1104,12 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   gap: 4px;
   font-weight: 600;
-  color: var(--color-ink);
+  color: #aa2d00; /* Signature Coral accent link */
+  transition: color 0.15s ease;
+}
+
+.hero-mini-ai-box:hover .hero-mini-ai-cta {
+  color: #181d26;
 }
 
 /* Pulse highlight animation for main chat box when scrolled to */
