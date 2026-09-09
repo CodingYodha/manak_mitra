@@ -24,10 +24,13 @@ async function runTests() {
     let resultCategory = "unknown";
     if (reply === null) {
       resultCategory = "compliance";
-    } else if (reply.toLowerCase().includes("didn't quite catch") || reply.toLowerCase().includes("did not understand") || reply.toLowerCase().includes("didn't understand")) {
-      resultCategory = "gibberish";
-    } else if (reply.toLowerCase().includes("manak mitra") || reply.includes("मानक मित्र")) {
-      resultCategory = "casual";
+    } else {
+      const norm = reply.replace(/[\s\u202f\u00a0]+/g, " ").toLowerCase();
+      if (norm.includes("didn't quite catch") || norm.includes("did not understand") || norm.includes("didn't understand") || norm.includes("didn't catch")) {
+        resultCategory = "gibberish";
+      } else if (norm.includes("manak mitra") || reply.includes("मानक मित्र") || norm.includes("compliance assistant")) {
+        resultCategory = "casual";
+      }
     }
 
     const ok = (tc.expected === "compliance" && reply === null) ||

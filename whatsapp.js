@@ -71,7 +71,50 @@ async function classifyAndReplyCasual(query) {
   const ql = query.toLowerCase().trim();
   const isHindi = /[\u0900-\u097F]/.test(query);
 
-  // 1. Primary: LLM Gatekeeper via Groq API
+  // 1. Primary: Azure OpenAI (gpt-5.4-mini)
+  if (process.env.AZURE_OPENAI_API_KEY) {
+    try {
+      const baseUrl = (process.env.AZURE_OPENAI_BASE_URL || "https://azure-ai-truxt-resource.openai.azure.com/openai/v1").replace(/\/$/, "");
+      const chatUrl = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`;
+      const model = process.env.AZURE_OPENAI_MODEL || "gpt-5.4-mini";
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const resp = await fetch(chatUrl, {
+        method: "POST",
+        headers: {
+          "api-key": process.env.AZURE_OPENAI_API_KEY,
+          "Authorization": `Bearer ${process.env.AZURE_OPENAI_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: query }
+          ],
+          max_completion_tokens: 300
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (resp.ok) {
+        const data = await resp.json();
+        const content = data.choices?.[0]?.message?.content?.trim() || "";
+        if (content.includes("[COMPLIANCE_QUERY]")) {
+          return null; // Route to RAG backend
+        }
+        return content;
+      }
+    } catch (e) {
+      console.warn("[WhatsApp AI] Azure OpenAI classification error, falling back:", e.message);
+    }
+  }
+
+  // 2. Secondary: LLM Gatekeeper via Groq API
   if (process.env.GROQ_API_KEY) {
     try {
       const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
@@ -107,7 +150,7 @@ async function classifyAndReplyCasual(query) {
         return content;
       }
     } catch (e) {
-      console.warn("[WhatsApp AI] LLM classification error, using fallback classifier:", e.message);
+      console.warn("[WhatsApp AI] Groq classification error, using fallback classifier:", e.message);
     }
   }
 

@@ -414,21 +414,44 @@ def _call_groq_llm(prompt: str, api_key: str) -> Optional[str]:
 
 
 def _call_azure_llm(prompt: str, api_key: str) -> Optional[str]:
-    """Calls Azure OpenAI GPT-4o-mini."""
+    """Calls Azure OpenAI (e.g. gpt-5.4-mini via OpenAI-compatible v1 or deployments endpoint)."""
     try:
-        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
-        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
-        api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-        url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
+        base_url = os.environ.get("AZURE_OPENAI_BASE_URL", "").rstrip("/")
+        model = os.environ.get("AZURE_OPENAI_MODEL") or os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-5.4-mini")
 
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.post(url, headers={"api-key": api_key}, json={
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 800,
-                "temperature": 0.1
-            })
-            if resp.status_code == 200:
-                return resp.json()["choices"][0]["message"]["content"].strip()
+        # 1. OpenAI-compatible Azure v1 endpoint (e.g. https://<resource>.openai.azure.com/openai/v1)
+        if base_url:
+            chat_url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+            for headers in [
+                {"api-key": api_key, "Content-Type": "application/json"},
+                {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            ]:
+                try:
+                    with httpx.Client(timeout=12.0) as client:
+                        resp = client.post(chat_url, headers=headers, json={
+                            "model": model,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "max_completion_tokens": 800
+                        })
+                        if resp.status_code == 200:
+                            return resp.json()["choices"][0]["message"]["content"].strip()
+                except Exception:
+                    pass
+
+        # 2. Azure Deployment endpoint fallback
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+        if not endpoint and base_url:
+            endpoint = base_url.split("/openai")[0]
+        if endpoint:
+            api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+            url = f"{endpoint}/openai/deployments/{model}/chat/completions?api-version={api_version}"
+            with httpx.Client(timeout=12.0) as client:
+                resp = client.post(url, headers={"api-key": api_key}, json={
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_completion_tokens": 800
+                })
+                if resp.status_code == 200:
+                    return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         logger.warning(f"Azure OpenAI Call failed: {e}")
     return None
@@ -486,22 +509,22 @@ def phrase(facts: Dict[str, Any], question: str) -> str:
         f"   - Keep URLs clean and readable."
     )
 
-    # 1. Google Gemini
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    if gemini_key:
-        res = _call_gemini_llm(p, gemini_key)
+    # 1. Azure OpenAI (Primary: gpt-5.4-mini)
+    azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
+    if azure_key:
+        res = _call_azure_llm(p, azure_key)
         if res: return res
 
-    # 2. Groq
+    # 2. Groq (Secondary / Fallback)
     groq_key = os.environ.get("GROQ_API_KEY")
     if groq_key:
         res = _call_groq_llm(p, groq_key)
         if res: return res
 
-    # 3. Azure OpenAI
-    azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
-    if azure_key:
-        res = _call_azure_llm(p, azure_key)
+    # 3. Google Gemini
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        res = _call_gemini_llm(p, gemini_key)
         if res: return res
 
     # 4. Ollama
