@@ -1,166 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { BarChart3, ShieldAlert, CheckCircle2, Globe, TrendingUp, AlertTriangle, ArrowUpRight } from 'lucide-react';
-import { apiUrl } from '../../config';
+import React, { useEffect, useState } from 'react';
+import { BarChart3, LoaderCircle, ShieldAlert } from 'lucide-react';
+
+const apiUrl = (path) => `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')}${path}`;
+const empty = { total_queries: 0, abstained_queries: 0, qcos_indexed: 0, mandatory_products_indexed: 0, testing_labs_indexed: 0, lab_scope_mappings: 0, standards_in_db: 0, queries_with_source_match: 0, intents: [], languages: [], channels: [], abstentions_by_intent: [], daily_activity: [], confidence_distribution: [], qcos_by_ministry: [] };
+
+function Breakdown({ title, rows, total, tone = '#2563eb' }) {
+  return <div className="editorial-chat-box" style={{ padding: '22px' }}><h3 style={{ fontSize: '16px', marginBottom: '16px' }}>{title}</h3>{rows.length ? rows.map((row) => <div key={row.label} style={{ marginBottom: '13px' }}><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', gap: '8px' }}><span>{row.label}</span><strong>{row.count}</strong></div><div style={{ height: '7px', background: '#f1f5f9', borderRadius: '4px', marginTop: '5px' }}><div style={{ height: '100%', borderRadius: '4px', background: tone, width: `${total ? Math.max(4, row.count / total * 100) : 0}%` }} /></div></div>) : <p style={{ color: '#64748b', fontSize: '13px' }}>No recorded activity yet.</p>}</div>;
+}
+
+function ActivityChart({ rows }) {
+  const peak = Math.max(1, ...rows.map((row) => row.count));
+  return <div className="editorial-chat-box" style={{ padding: '22px' }}><h3 style={{ fontSize: '16px', marginBottom: '8px' }}>Daily inquiry activity</h3><p style={{ color: '#64748b', fontSize: '12px', marginBottom: '18px' }}>Last 30 dates with recorded activity; red segment denotes guard abstentions.</p>{rows.length ? <div style={{ display: 'flex', minHeight: '145px', alignItems: 'end', gap: '10px', overflowX: 'auto', paddingTop: '10px' }}>{rows.map((row) => <div key={row.date} style={{ minWidth: '42px', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}><strong style={{ fontSize: '12px' }}>{row.count}</strong><div style={{ height: '100px', width: '100%', maxWidth: '32px', background: '#e2e8f0', borderRadius: '4px 4px 0 0', display: 'flex', flexDirection: 'column-reverse', overflow: 'hidden' }}><div style={{ height: `${row.count / peak * 100}%`, background: '#2563eb' }} /><div style={{ height: `${row.abstained / peak * 100}%`, background: '#dc2626' }} /></div><span style={{ fontSize: '10px', color: '#64748b', whiteSpace: 'nowrap' }}>{row.date.slice(5)}</span></div>)}</div> : <p style={{ color: '#64748b', fontSize: '13px' }}>Activity will appear after the first recorded inquiry.</p>}</div>;
+}
 
 export default function MinistryDashboard() {
-  const [stats, setStats] = useState({ total_queries: 148, abstained: 10 });
-
-  useEffect(() => {
-    fetch(apiUrl('/stats'))
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.total_queries !== undefined) {
-          setStats(data);
-        }
-      })
-      .catch(() => console.log('Stats loaded from local telemetry'));
-  }, []);
-
-  const total = stats.total_queries || 148;
-  const abstained = stats.abstained || 10;
-  const verified = total - abstained;
-  const verifiedPct = ((verified / total) * 100).toFixed(1);
-  const abstainedPct = ((abstained / total) * 100).toFixed(1);
-
-  return (
-    <div className="container section-rhythm" style={{ paddingTop: '40px' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <span className="caption" style={{ color: '#181d26', fontWeight: 600 }}>DEMO BEAT 6 · MINISTRY DASHBOARD</span>
-        <h2 className="display-md" style={{ marginTop: '4px', marginBottom: '8px' }}>
-          Ministry of Consumer Affairs Regulatory Intelligence
-        </h2>
-        <p className="body-md" style={{ color: 'var(--color-muted)' }}>
-          Real-time visibility into compliance inquiries, language distribution, and high-priority regulatory gaps where citizen demand exceeds published QCO orders.
-        </p>
-      </div>
-
-      {/* 4-Up Metric Stat Cards (as in design.md signature dark card style) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '28px' }}>
-        <div className="editorial-chat-box" style={{ padding: '20px' }}>
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>TOTAL CITIZEN INQUIRIES</div>
-          <div style={{ fontSize: '32px', fontWeight: 600, color: '#181d26', marginTop: '6px' }}>{total}</div>
-          <div style={{ fontSize: '12px', color: '#15803d', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <TrendingUp size={13} /> Across Web, WhatsApp & Voice
-          </div>
-        </div>
-
-        <div className="editorial-chat-box" style={{ padding: '20px' }}>
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>VERIFIED MATCHES</div>
-          <div style={{ fontSize: '32px', fontWeight: 600, color: '#15803d', marginTop: '6px' }}>{verifiedPct}%</div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-            {verified} queries mapped to official IS/QCO
-          </div>
-        </div>
-
-        <div className="editorial-chat-box" style={{ padding: '20px' }}>
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>ABSTENTION / REFUSAL RATE</div>
-          <div style={{ fontSize: '32px', fontWeight: 600, color: '#b91c1c', marginTop: '6px' }}>{abstainedPct}%</div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-            Zero-hallucination guard triggered
-          </div>
-        </div>
-
-        <div className="editorial-chat-box" style={{ padding: '20px' }}>
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>HINDI & VERNACULAR USAGE</div>
-          <div style={{ fontSize: '32px', fontWeight: 600, color: '#2563eb', marginTop: '6px' }}>41.5%</div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-            Supported via Bhashini & Web Speech
-          </div>
-        </div>
-      </div>
-
-      {/* 2-Column Analytics Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-        {/* Sector Demand Breakdown */}
-        <div className="editorial-chat-box" style={{ padding: '24px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#181d26', marginBottom: '16px' }}>
-            Top Product Sectors Queried
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
-                <span style={{ fontWeight: 500 }}>Electronics & IT Goods (CRS)</span>
-                <strong>42% (62 queries)</strong>
-              </div>
-              <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ width: '42%', height: '100%', background: '#2563eb' }}></div>
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
-                <span style={{ fontWeight: 500 }}>Gold Jewellery & Hallmarking (HUID)</span>
-                <strong>28% (41 queries)</strong>
-              </div>
-              <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ width: '28%', height: '100%', background: '#f59e0b' }}></div>
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
-                <span style={{ fontWeight: 500 }}>Children Toys & Child Safety (ISI)</span>
-                <strong>18% (27 queries)</strong>
-              </div>
-              <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ width: '18%', height: '100%', background: '#10b981' }}></div>
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
-                <span style={{ fontWeight: 500 }}>Civil Engineering & Cement</span>
-                <strong>12% (18 queries)</strong>
-              </div>
-              <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ width: '12%', height: '100%', background: '#8b5cf6' }}></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* High Priority Unanswered Log (Regulatory Gap Telemetry) */}
-        <div className="editorial-chat-box" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <ShieldAlert size={18} color="#b91c1c" />
-            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#b91c1c' }}>
-              High-Priority Regulatory Gaps Log
-            </h3>
-          </div>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px', lineHeight: 1.5 }}>
-            Citizen inquiries where the AI strictly abstained due to lack of an official notified QCO. Represents immediate demand for regulatory drafting:
-          </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', borderRadius: '6px', padding: '10px 12px' }}>
-              <div style={{ fontSize: '13px', color: '#7f1d1d', fontWeight: 600 }}>
-                "Are imported lithium cells under mandatory certification for agricultural drones?"
-              </div>
-              <div style={{ fontSize: '11px', color: '#991b1b', marginTop: '2px' }}>
-                Cosine Score: 0.49 · Refused · Recommendation: Issue Clarification Order on Drones
-              </div>
-            </div>
-
-            <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', borderRadius: '6px', padding: '10px 12px' }}>
-              <div style={{ fontSize: '13px', color: '#7f1d1d', fontWeight: 600 }}>
-                "Does recycled corrugated paper packaging need compulsory eco-mark?"
-              </div>
-              <div style={{ fontSize: '11px', color: '#991b1b', marginTop: '2px' }}>
-                Cosine Score: 0.51 · Refused · Recommendation: Publish Eco-Mark Gazette Roadmap
-              </div>
-            </div>
-
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px 12px' }}>
-              <div style={{ fontSize: '13px', color: '#334155', fontWeight: 600 }}>
-                "What is the airspeed of an unladen swallow?"
-              </div>
-              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                Out-of-domain trap · Refused · Referred to National Toll-Free Helpline: 1800-11-4000
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const [data, setData] = useState(empty); const [state, setState] = useState('loading'); const [error, setError] = useState('');
+  useEffect(() => { const controller = new AbortController(); (async () => { try { const response = await fetch(apiUrl('/api/analytics'), { signal: controller.signal }); if (!response.ok) throw new Error(`Analytics service returned HTTP ${response.status}.`); setData(await response.json()); setState('ready'); } catch (requestError) { if (requestError.name !== 'AbortError') { setError(requestError.message || 'Unable to load analytics.'); setState('error'); } } })(); return () => controller.abort(); }, []);
+  const verified = Math.max(0, data.total_queries - data.abstained_queries); const verifiedPct = data.total_queries ? (verified / data.total_queries * 100).toFixed(1) : '0.0'; const abstainedPct = data.total_queries ? (data.abstained_queries / data.total_queries * 100).toFixed(1) : '0.0';
+  return <div className="container section-rhythm" style={{ paddingTop: '40px' }}>
+    <div style={{ marginBottom: '28px' }}><span className="caption" style={{ color: '#181d26', fontWeight: 600 }}>PRIVACY-SAFE OPERATIONS VIEW</span><h2 className="display-md" style={{ marginTop: '4px', marginBottom: '8px' }}>Ministry of Consumer Affairs Regulatory Intelligence</h2><p className="body-md" style={{ color: 'var(--color-muted)' }}>Live aggregates from the local query audit log and curated compliance catalog. Individual question text is deliberately not retained.</p></div>
+    {state === 'loading' && <div style={{ padding: '18px', color: '#64748b', display: 'flex', gap: '8px' }}><LoaderCircle size={17} /> Loading operational aggregates…</div>}
+    {state === 'error' && <div style={{ padding: '16px', color: '#991b1b', background: '#fef2f2', borderRadius: '8px', display: 'flex', gap: '8px' }}><ShieldAlert size={18} /> {error}</div>}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '28px' }}>{[['Total recorded inquiries', data.total_queries, '#181d26'], ['Evidence-backed responses', `${verifiedPct}%`, '#15803d'], ['Queries with cited source', data.queries_with_source_match, '#0f766e'], ['Guard abstention rate', `${abstainedPct}%`, '#b91c1c'], ['Catalogued laboratories', data.testing_labs_indexed, '#2563eb'], ['Verified lab-scope mappings', data.lab_scope_mappings, '#7c3aed'], ['Mandatory products indexed', data.mandatory_products_indexed, '#b45309'], ['Standards indexed', data.standards_in_db, '#0f766e']].map(([label, value, color]) => <div key={label} className="editorial-chat-box" style={{ padding: '18px' }}><div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>{label}</div><div style={{ fontSize: '28px', color, fontWeight: 600, marginTop: '7px' }}>{value}</div></div>)}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(280px, 1fr)', gap: '24px', marginBottom: '24px' }}><ActivityChart rows={data.daily_activity} /><Breakdown title="Confidence distribution" rows={data.confidence_distribution} total={data.total_queries} tone="#0891b2" /></div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}><Breakdown title="Inquiry intent distribution" rows={data.intents} total={data.total_queries} /><Breakdown title="Channel distribution" rows={data.channels} total={data.total_queries} tone="#0f766e" /><Breakdown title="Languages requested" rows={data.languages} total={data.total_queries} tone="#7c3aed" /><Breakdown title="Abstentions by intent" rows={data.abstentions_by_intent} total={data.abstained_queries} tone="#dc2626" /><Breakdown title="Curated QCO coverage by ministry" rows={data.qcos_by_ministry} total={data.qcos_indexed} tone="#b45309" /></div>
+    <div className="editorial-chat-box" style={{ padding: '22px', marginTop: '24px' }}><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><BarChart3 size={18} /><h3 style={{ fontSize: '16px' }}>Data handling</h3></div><p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5, marginTop: '10px' }}>This view reports counts, not fabricated demand trends or sample citizen questions. Query text retained: <strong>{data.query_text_retained ? 'yes' : 'no'}</strong>. Regulatory follow-up should use an approved, privacy-reviewed analytics workflow.</p></div>
+  </div>;
 }

@@ -214,45 +214,68 @@ def labs(city: Optional[str] = None, category: Optional[str] = None,
     return {"labs": results, "citations": citations, "_top_score": 1.0}
 
 
-def passport(product: str) -> Dict[str, Any]:
+def passport(product: str, candidate_id: Optional[int] = None, city: str = "") -> Dict[str, Any]:
+    """Build an evidence-gated compliance passport.
+
+    A semantic standard match is useful for discovery but not enough to claim a
+    QCO, scheme, or eligible lab. This endpoint therefore requires an explicit
+    curated QCO item (direct IS/HSN match or user-selected candidate) before it
+    produces a verified passport. Everything else is a disambiguation or
+    research-only result.
     """
-    Compliance Passport: unified dossier composing mandate() + recommend() + labs() + scheme().
-    """
-    m = mandate(product)
-    r = recommend(product)
+    if not store:
+        return {"status": "unavailable", "product": product, "reason": "Structured catalogue is unavailable."}
 
-    top_is = None
-    if m.get("is_number"):
-        top_is = m["is_number"]
-    elif r.get("hits"):
-        top_is = r["hits"][0]["is_number"]
+    candidates = store.passport_candidates(product)
+    selected = None
+    if candidate_id is not None:
+        selected = next((item for item in candidates if item["id"] == candidate_id), None)
+        if not selected:
+            return {"status": "needs_disambiguation", "product": product, "reason": "Select one of the current catalogue matches.", "candidates": candidates}
+    elif len(candidates) == 1 and candidates[0].get("exact_match"):
+        selected = candidates[0]
 
-    # An unmatched product has no mandate scheme. Keep the passport endpoint
-    # useful for arbitrary catalogue searches by falling back to Scheme-I
-    # guidance instead of passing None into scheme().
-    sch_type = m.get("scheme") or "ISI"
-    sch = scheme(sch_type)
-    l = labs(category=product, is_number=top_is)
+    if not selected:
+        explicit_standard = store.get_standard_by_number(product)
+        if explicit_standard:
+            return {
+                "status": "research_only",
+                "product": product,
+                "reason": "The Indian Standard was found, but no linked mandatory-product/QCO record was confirmed.",
+                "standard": explicit_standard,
+                "candidates": candidates,
+                "citations": [{"kind": "standard", "ref": explicit_standard["is_number"], "title": explicit_standard["title"], "url": explicit_standard.get("purchase_url", ""), "status": explicit_standard.get("status", "")}]
+            }
+        return {
+            "status": "needs_disambiguation" if candidates else "no_verified_match",
+            "product": product,
+            "reason": "Select a matching regulated product before generating a compliance decision." if candidates else "No exact regulated-product match was found. Refine the product name, HSN, or IS number.",
+            "candidates": candidates,
+            "citations": []
+        }
 
-    all_citations = []
-    if m.get("citations"):
-        all_citations.extend(m["citations"])
-    if r.get("citations"):
-        all_citations.extend(r["citations"])
-    if sch.get("citations"):
-        all_citations.extend(sch["citations"])
-    if l.get("citations"):
-        all_citations.extend(l["citations"][:2])
+    standard = store.get_standard_by_number(selected.get("is_number") or "")
+    scheme_result = scheme(selected.get("scheme") or "")
+    labs = store.get_verified_labs_for_standard(selected.get("is_number") or "", city=city, limit=5)
+    qco_citation = {
+        "kind": "qco", "ref": selected.get("qco_title") or selected.get("is_number"),
+        "title": selected.get("qco_title"), "url": selected.get("gazette_url") or selected.get("source_url", ""),
+        "retrieved_on": selected.get("retrieved_on"), "effective_on": selected.get("effective_on"),
+        "ministry": selected.get("ministry", "")
+    }
+    citations = [qco_citation]
+    if standard:
+        citations.append({"kind": "standard", "ref": standard["is_number"], "title": standard["title"], "status": standard.get("status", ""), "url": standard.get("purchase_url", "")})
+    citations.extend(scheme_result.get("citations", []))
+    citations.extend({"kind": "lab", "ref": lab["name"], "url": lab.get("source_url", ""), "is_number": lab.get("is_number", "")} for lab in labs)
 
     return {
-        "product": product,
-        "matched_standard": top_is,
-        "mandate": m,
-        "recommendation": r,
-        "scheme": sch.get("scheme"),
-        "labs": l.get("labs", []),
-        "citations": all_citations,
-        "_top_score": max(m.get("_top_score", 0.0), r.get("_top_score", 0.0))
+        "status": "verified", "product": selected.get("product_desc") or product,
+        "selected_candidate": selected, "matched_standard": selected.get("is_number"),
+        "standard": standard, "scheme": scheme_result.get("scheme"), "labs": labs,
+        "citations": citations,
+        "applicability": {"mandatory": True, "effective_on": selected.get("effective_on"), "confidence": selected.get("confidence", 1.0)},
+        "limitations": ["Verify amendments, exemptions, and current enforcement notices from the linked official source before filing."]
     }
 
 

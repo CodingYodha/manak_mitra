@@ -23,16 +23,18 @@ export default function ComplianceJourney({ onOpenPassport, onOpenLabs }) {
   const scheme = result?.scheme?.name || result?.mandate?.scheme || 'Confirm with official BIS guidance';
   const persist = (items) => { setSaved(items); localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); };
 
-  const findPath = async (event) => {
+  const findPath = async (event, candidateId = null) => {
     event?.preventDefault();
     const value = query.trim();
     if (!value) return;
     setLoading(true); setError(''); setResult(null); setComplete([]);
     try {
-      const response = await fetch(apiUrl(`/api/passport/${encodeURIComponent(value)}`));
+      const params = new URLSearchParams();
+      if (candidateId !== null) params.set('candidate_id', String(candidateId));
+      if (city.trim()) params.set('city', city.trim());
+      const response = await fetch(apiUrl(`/api/passport/${encodeURIComponent(value)}${params.size ? `?${params}` : ''}`));
       if (!response.ok) throw new Error(`The compliance service returned ${response.status}`);
       const data = await response.json();
-      if (!data.matched_standard && !data.citations?.length) throw new Error('No official catalogue match was returned. Try a clearer product name, HSN, or IS number.');
       setResult(data);
     } catch (err) { setError(err.message || 'Unable to retrieve the compliance path.'); }
     finally { setLoading(false); }
@@ -60,7 +62,10 @@ export default function ComplianceJourney({ onOpenPassport, onOpenLabs }) {
       </form>
       {error && <div style={{ marginTop: '16px', padding: '12px', background: '#fef2f2', color: '#991b1b', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
 
-      {result && <>
+      {result?.status === 'needs_disambiguation' && <div style={{ marginTop: '20px' }}><strong>Confirm the regulated product</strong><p style={{ color: '#64748b', fontSize: '13px', margin: '6px 0 12px' }}>{result.reason}</p>{result.candidates?.map((candidate) => <button key={candidate.id} className="btn-secondary" style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: '8px' }} onClick={() => findPath(null, candidate.id)}><strong>{candidate.product_desc}</strong><span style={{ display: 'block', fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{candidate.is_number} · {candidate.scheme || 'Scheme not listed'}</span></button>)}</div>}
+      {result?.status === 'no_verified_match' && <div style={{ marginTop: '16px', padding: '12px', background: '#fff7ed', color: '#9a3412', borderRadius: '6px', fontSize: '13px' }}>{result.reason}</div>}
+      {result?.status === 'research_only' && <div style={{ marginTop: '16px', padding: '12px', background: '#eff6ff', color: '#1e3a8a', borderRadius: '6px', fontSize: '13px' }}>{result.reason}</div>}
+      {result?.status === 'verified' && <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', margin: '24px 0' }}>
           {[[standard, 'Matched standard'], [scheme, 'Certification path'], [`${result.labs?.length || 0} matching labs`, 'Available testing options']].map(([value, label]) => <div key={label} style={{ padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}><div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>{label}</div><div style={{ fontWeight: 600, color: '#181d26', marginTop: '5px' }}>{value}</div></div>)}
         </div>
