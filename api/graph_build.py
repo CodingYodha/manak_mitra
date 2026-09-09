@@ -29,6 +29,9 @@ def _norm_is(raw: str) -> str:
       'IS 1417'                    → 'IS 1417'
     """
     s = raw.strip()
+    # Mapping files frequently contain a dangling colon (for example,
+    # "IS 15768 :"). Treat it as formatting, not as part of the standard ID.
+    s = re.sub(r"\s*:\s*$", "", s)
     # Remove trailing year in parens that follows a Part spec: 'IS X (Part Y) : 2018' -> 'IS X (Part Y)'
     s = re.sub(r"(\(Part\s*\d+\))\s*[:\-]?\s*\(?(\d{4})\)?", r"\1", s, flags=re.I)
     # Normalize ': Part X (year)' -> '(Part X)'
@@ -65,7 +68,29 @@ def build(output: str = "graph.gpickle", verbose: bool = True) -> object:
     except ImportError:
         raise RuntimeError("networkx not installed — run: pip install networkx")
 
-    G = nx.MultiDiGraph()
+    # A relationship is unique for a source/target pair in this domain. A
+    # DiGraph keeps duplicate CSV rows from becoming duplicate rendered links.
+    G = nx.DiGraph()
+
+    def ensure_standard(is_number: str) -> str:
+        """Create a typed placeholder when a relation references an IS absent
+        from the catalogue. This preserves the relationship without emitting an
+        untyped node that the client cannot render consistently.
+        """
+        node_id = _std_id(is_number)
+        if node_id not in G:
+            label = _norm_is(is_number)
+            G.add_node(node_id, type="standard", label=label,
+                       is_number=label, status="UNVERIFIED_REFERENCE")
+        return node_id
+
+    def ensure_qco(qco_id: str) -> str:
+        """Create a typed QCO reference for product rows not in the QCO file."""
+        node_id = _qco_id(qco_id)
+        if node_id not in G:
+            G.add_node(node_id, type="qco", label=qco_id,
+                       status="UNVERIFIED_REFERENCE")
+        return node_id
 
     # ── 1. Standards (from standards.csv — 23k rows) ─────────────────────────
     stds_csv = ROOT / "data" / "curated" / "standards.csv"
@@ -160,7 +185,7 @@ def build(output: str = "graph.gpickle", verbose: bool = True) -> object:
             if not is_num:
                 continue
             lab_node = _lab_id(code)
-            std_node = _std_id(is_num)
+            std_node = ensure_standard(is_num)
             if lab_node in G:
                 G.add_edge(lab_node, std_node, rel="tests",
                            scope_validity=row.get("scope_validity", ""),
@@ -184,7 +209,7 @@ def build(output: str = "graph.gpickle", verbose: bool = True) -> object:
             cluster = row.get("ics_cluster", "").strip().lower()
             if not is_num or not cluster:
                 continue
-            std_node = _std_id(is_num)
+            std_node = ensure_standard(is_num)
             if std_node in G and not G.nodes[std_node].get("ics"):
                 ics_prefix = CLUSTER_TO_ICS.get(cluster, "")
                 if ics_prefix:
@@ -223,11 +248,11 @@ def build(output: str = "graph.gpickle", verbose: bool = True) -> object:
                        category=row.get("category", "").strip())
 
             if is_num:
-                std_node = _std_id(is_num)
+                std_node = ensure_standard(is_num)
                 G.add_edge(pid, std_node, rel="requires")
 
             if qco_raw:
-                qid = _qco_id(qco_raw)
+                qid = ensure_qco(qco_raw)
                 G.add_edge(pid, qid, rel="governed_by")
                 if scheme:
                     sid = _scheme_id(scheme)
@@ -257,9 +282,9 @@ def build(output: str = "graph.gpickle", verbose: bool = True) -> object:
             if pid not in G:
                 G.add_node(pid, type="product", label=r["product_desc"])
             if r["is_number"]:
-                G.add_edge(pid, _std_id(r["is_number"]), rel="requires")
+                G.add_edge(pid, ensure_standard(r["is_number"]), rel="requires")
             if r["qco_id"]:
-                G.add_edge(pid, _qco_id(r["qco_id"]), rel="governed_by")
+                G.add_edge(pid, ensure_qco(r["qco_id"]), rel="governed_by")
             if r["scheme"]:
                 sid = _scheme_id(r["scheme"])
                 G.add_node(sid, type="scheme", label=r["scheme"])
@@ -275,10 +300,12 @@ def build(output: str = "graph.gpickle", verbose: bool = True) -> object:
         for alias in aliases:
             alias_pid = _prod_id(alias)
             G.add_node(alias_pid, type="product_alias", label=alias, canonical=canonical_pid)
-            # Copy all edges from canonical to alias
-            for succ in list(G.successors(canonical_pid)):
-                for _, _, data in G.out_edges(canonical_pid, keys=False, data=True):
-                    G.add_edge(alias_pid, succ, **data)
+            # Copy each canonical relationship exactly once. The old nested
+            # successor/edge loops created a Cartesian product of targets and
+            # relationship labels, corrupting alias links and duplicating QCO
+            # → scheme lines in the visual graph.
+            for _, successor, data in list(G.out_edges(canonical_pid, data=True)):
+                G.add_edge(alias_pid, successor, **data)
             alias_count += 1
     if verbose:
         print(f"[graph_build] product nodes: {prod_count} (+ 3 demo from DB, {alias_count} aliases)")

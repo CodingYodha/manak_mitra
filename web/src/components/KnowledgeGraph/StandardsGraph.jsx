@@ -23,6 +23,17 @@ const NODE_COLORS = {
   highlight: '#ffffff'
 };
 
+const LINK_COLORS = {
+  tests: '#38bdf8',
+  requires: '#fbbf24',
+  governed_by: '#fb7185',
+  classified_as: '#c084fc',
+  parent_of: '#a78bfa',
+  under: '#2dd4bf'
+};
+
+const FOCUS_NEIGHBOR_LIMIT = 60;
+
 const getLinkId = (link) => {
   const s = typeof link.source === 'object' ? link.source.id : link.source;
   const t = typeof link.target === 'object' ? link.target.id : link.target;
@@ -36,7 +47,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedLink, setSelectedLink] = useState(null);
   const [dimensions, setDimensions] = useState({ width: 1200, height: 680 });
-  const [graphStats, setGraphStats] = useState({ total_nodes: 26835, total_edges: 8611, rendered_nodes: 4470, rendered_edges: 8611 });
+  const [graphStats, setGraphStats] = useState({ total_nodes: 26835, total_edges: 7764, rendered_nodes: 26835, rendered_edges: 7764 });
   const [loading, setLoading] = useState(true);
 
   // Highlighting sets of IDs
@@ -64,110 +75,115 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     return () => observer.disconnect();
   }, []);
 
-  // Instant Load from Pre-computed 3D Fast Layout
+  const nodeById = useMemo(
+    () => new Map(graphData.nodes.map((node) => [node.id, node])),
+    [graphData.nodes]
+  );
+
+  const nodeDegree = useMemo(() => {
+    const degree = new Map(graphData.nodes.map((node) => [node.id, 0]));
+    graphData.links.forEach((link) => {
+      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+      degree.set(sourceId, (degree.get(sourceId) || 0) + 1);
+      degree.set(targetId, (degree.get(targetId) || 0) + 1);
+    });
+    return degree;
+  }, [graphData]);
+
+  // Load the complete positioned catalogue first so the browser can cache it and
+  // never has to run a force layout across thousands of nodes.
   useEffect(() => {
     setLoading(true);
+    const controller = new AbortController();
 
-    fetch('/graph_3d.json')
+    const processData = (data) => {
+      if (!data.nodes?.length) return;
+      const nodes = data.nodes.map((n) => ({
+        id: n.id,
+        label: n.label || n.title || n.id,
+        type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : n.id.startsWith('qco:') ? 'qco' : 'standard'),
+        group: n.group || '0',
+        scheme: n.scheme || (n.id.startsWith('std:') ? 'CRS/ISI' : ''),
+        status: n.status || 'ACTIVE',
+        city: n.city || '', state: n.state || '',
+        purchase_url: n.purchase_url || '', notification_url: n.notification_url || '', source_url: n.source_url || '',
+        ...(Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
+          ? { x: n.x, y: n.y, z: n.z, fx: n.x, fy: n.y, fz: n.z } : {})
+      }));
+      const links = (data.links || []).map((l) => ({
+        source: typeof l.source === 'object' ? l.source.id : l.source,
+        target: typeof l.target === 'object' ? l.target.id : l.target,
+        rel: l.rel || 'links_to'
+      }));
+      setGraphData({ nodes, links });
+      setGraphStats((current) => ({ ...current, rendered_nodes: nodes.length, rendered_edges: links.length }));
+    };
+
+    fetch('/graph.json', { signal: controller.signal })
       .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error('Static graph HTTP error');
         return res.json();
       })
-      .then((data) => {
-        if (data.nodes && data.nodes.length > 0) {
-          const nodes = data.nodes.map((n) => ({
-            id: n.id,
-            label: n.label || n.title || n.id,
-            type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : n.id.startsWith('qco:') ? 'qco' : 'standard'),
-            group: n.group || '0',
-            scheme: n.scheme || (n.id.startsWith('std:') ? 'CRS/ISI' : ''),
-            status: n.status || 'ACTIVE',
-            city: n.city || '',
-            state: n.state || '',
-            purchase_url: n.purchase_url || '',
-            notification_url: n.notification_url || '',
-            source_url: n.source_url || '',
-            // Pre-computed 3D positions for zero calculation lag
-            x: n.x,
-            y: n.y,
-            z: n.z,
-            fx: n.fx,
-            fy: n.fy,
-            fz: n.fz
-          }));
-
-          const links = (data.links || []).map((l) => ({
-            source: typeof l.source === 'object' ? l.source.id : l.source,
-            target: typeof l.target === 'object' ? l.target.id : l.target,
-            rel: l.rel || 'links_to'
-          }));
-
-          setGraphData({ nodes, links });
-          if (data.stats) setGraphStats(data.stats);
-
-          if (focusedStandard) {
-            const match = nodes.find((n) => n.id === focusedStandard || n.id === `std:${focusedStandard}`);
-            if (match) {
-              selectNode(match, { nodes, links });
-            }
-          }
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load 3D graph layout, trying fallback /graph_fast.json:', err);
-        return fetch('/graph_fast.json')
+      .then(processData)
+      .catch(() => {
+        if (controller.signal.aborted) return null;
+        return fetch('/graph', { signal: controller.signal })
           .then((res) => res.json())
-          .then((data) => {
-            if (data.nodes && data.nodes.length > 0) {
-              const nodes = data.nodes.map((n) => ({
-                id: n.id,
-                label: n.label || n.title || n.id,
-                type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : n.id.startsWith('qco:') ? 'qco' : 'standard'),
-                group: n.group || '0',
-                scheme: n.scheme || (n.id.startsWith('std:') ? 'CRS/ISI' : ''),
-                status: n.status || 'ACTIVE',
-                city: n.city || '',
-                state: n.state || '',
-                purchase_url: n.purchase_url || '',
-                notification_url: n.notification_url || '',
-                source_url: n.source_url || '',
-                x: n.x,
-                y: n.y,
-                z: n.z || 0,
-                fx: n.x,
-                fy: n.y,
-                fz: n.z || 0
-              }));
-              const links = (data.links || []).map((l) => ({
-                source: typeof l.source === 'object' ? l.source.id : l.source,
-                target: typeof l.target === 'object' ? l.target.id : l.target,
-                rel: l.rel || 'links_to'
-              }));
-              setGraphData({ nodes, links });
-            }
+          .then(processData)
+          .catch((error) => {
+            if (error.name !== 'AbortError') console.error('Graph load error:', error);
           });
       })
       .finally(() => {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
-  }, [focusedStandard]);
+    return () => controller.abort();
+  }, []);
 
-  // Filter nodes and links based on selected ICS sector & search query
+  // The initial universe keeps every connected node and relationship. Clicking
+  // an entity renders only its direct neighbourhood for a readable inspection.
   const filteredData = useMemo(() => {
     if (!graphData.nodes.length) return { nodes: [], links: [] };
 
     const activeNodeIds = new Set();
     const query = searchQuery.trim().toLowerCase();
+    const isFocusMode = Boolean(selectedNode);
+
+    if (isFocusMode) {
+      activeNodeIds.add(selectedNode.id);
+      const directLinks = graphData.links
+        .filter((link) => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          return sourceId === selectedNode.id || targetId === selectedNode.id;
+        })
+        .sort((a, b) => {
+          const other = (link) => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            return sourceId === selectedNode.id ? targetId : sourceId;
+          };
+          return (nodeDegree.get(other(b)) || 0) - (nodeDegree.get(other(a)) || 0);
+        })
+        .slice(0, FOCUS_NEIGHBOR_LIMIT);
+      directLinks.forEach((link) => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        activeNodeIds.add(sourceId);
+        activeNodeIds.add(targetId);
+      });
+    }
 
     const nodes = graphData.nodes.filter((n) => {
-      const matchesGroup = selectedGroup === 'ALL' || n.group === selectedGroup || n.type === 'product' || n.type === 'lab';
+      const matchesGroup = selectedGroup === 'ALL' || n.group === selectedGroup || n.type === 'product' || n.type === 'lab' || n.type === 'ics';
       const matchesSearch =
         !query ||
         n.id.toLowerCase().includes(query) ||
         (n.label && n.label.toLowerCase().includes(query)) ||
         (n.city && n.city.toLowerCase().includes(query));
 
-      const keep = matchesGroup && matchesSearch;
+      const keep = isFocusMode ? activeNodeIds.has(n.id) : matchesGroup && matchesSearch;
       if (keep) activeNodeIds.add(n.id);
       return keep;
     });
@@ -175,11 +191,12 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     const links = graphData.links.filter((l) => {
       const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
       const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-      return activeNodeIds.has(sourceId) && activeNodeIds.has(targetId);
+      const directFocusLink = !isFocusMode || sourceId === selectedNode.id || targetId === selectedNode.id;
+      return directFocusLink && activeNodeIds.has(sourceId) && activeNodeIds.has(targetId);
     });
 
     return { nodes, links };
-  }, [graphData, selectedGroup, searchQuery]);
+  }, [graphData, selectedGroup, searchQuery, selectedNode, nodeDegree]);
 
   // Find connected neighbors for the currently selected node
   const selectedNodeNeighbors = useMemo(() => {
@@ -192,15 +209,15 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
       const targetId = typeof l.target === 'object' ? l.target.id : l.target;
 
       if (sourceId === nodeId) {
-        const targetNode = graphData.nodes.find((n) => n.id === targetId);
+        const targetNode = nodeById.get(targetId);
         if (targetNode) neighbors.push({ node: targetNode, rel: l.rel, direction: 'outgoing', link: l });
       } else if (targetId === nodeId) {
-        const sourceNode = graphData.nodes.find((n) => n.id === sourceId);
+        const sourceNode = nodeById.get(sourceId);
         if (sourceNode) neighbors.push({ node: sourceNode, rel: l.rel, direction: 'incoming', link: l });
       }
     });
-    return neighbors;
-  }, [selectedNode, graphData]);
+    return neighbors.sort((a, b) => (nodeDegree.get(b.node.id) || 0) - (nodeDegree.get(a.node.id) || 0)).slice(0, FOCUS_NEIGHBOR_LIMIT);
+  }, [selectedNode, graphData.links, nodeById, nodeDegree]);
 
   // Select node and highlight its connected 1-hop subgraph in 3D
   const selectNode = useCallback((node, dataOverride = null) => {
@@ -215,7 +232,23 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
 
     newHighlightNodes.add(node.id);
 
-    currentData.links.forEach((l) => {
+    const directLinks = currentData.links
+      .filter((l) => {
+        const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+        const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+        return sourceId === node.id || targetId === node.id;
+      })
+      .sort((a, b) => {
+        const other = (link) => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          return sourceId === node.id ? targetId : sourceId;
+        };
+        return (nodeDegree.get(other(b)) || 0) - (nodeDegree.get(other(a)) || 0);
+      })
+      .slice(0, FOCUS_NEIGHBOR_LIMIT);
+
+    directLinks.forEach((l) => {
       const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
       const targetId = typeof l.target === 'object' ? l.target.id : l.target;
 
@@ -238,18 +271,24 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
       const hyp = Math.hypot(node.x, node.y, node.z || 0) || 1;
       const distRatio = 1 + distance / hyp;
       fgRef.current.cameraPosition(
-        { x: node.x * distRatio, y: node.y * distRatio, z: (node.z || 0) * distRatio + 30 },
-        node,
+        { x: node.x * distRatio, y: node.y * distRatio, z: (node.z || 0) * distRatio + 40 },
+        { x: node.x, y: node.y, z: node.z || 0 },
         800
       );
     }
-  }, [graphData, onSelectStandard]);
+  }, [graphData, nodeDegree, onSelectStandard]);
+
+  useEffect(() => {
+    if (!focusedStandard || !graphData.nodes.length) return;
+    const match = graphData.nodes.find((node) => node.id === focusedStandard || node.id === `std:${focusedStandard}`);
+    if (match && selectedNode?.id !== match.id) selectNode(match);
+  }, [focusedStandard, graphData, selectedNode?.id, selectNode]);
 
   // Select relationship link and highlight its endpoints
   const selectLink = useCallback((link) => {
     if (!link) return;
-    const sourceNode = typeof link.source === 'object' ? link.source : graphData.nodes.find(n => n.id === link.source);
-    const targetNode = typeof link.target === 'object' ? link.target : graphData.nodes.find(n => n.id === link.target);
+    const sourceNode = typeof link.source === 'object' ? link.source : nodeById.get(link.source);
+    const targetNode = typeof link.target === 'object' ? link.target : nodeById.get(link.target);
 
     setSelectedLink(link);
     if (sourceNode) setSelectedNode(sourceNode);
@@ -275,7 +314,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
         800
       );
     }
-  }, [graphData]);
+  }, [nodeById]);
 
   // Reset to full 3D graph view
   const handleReset = useCallback(() => {
@@ -426,6 +465,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.lab }}></span> Lab</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.ics }}></span> ICS Sector</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '9px', height: '9px', borderRadius: '50%', background: NODE_COLORS.qco }}></span> QCO Order</span>
+            <span style={{ color: '#cbd5e1' }}>Links: cyan test · gold requirement · pink QCO</span>
           </div>
 
           {/* 3D Navigation Hint */}
@@ -448,26 +488,31 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
                 }
                 return NODE_COLORS[n.type] || '#94a3b8';
               }}
-              nodeRelSize={4.5}
+              nodeRelSize={2.5}
               nodeVal={(n) => {
                 const isSelected = selectedNode && selectedNode.id === n.id;
-                if (isSelected) return 15;
-                if (highlightNodeIds.has(n.id)) return 10;
-                return n.type === 'ics' ? 8 : n.type === 'standard' ? 5 : 4;
+                if (isSelected) return 12;
+                if (highlightNodeIds.has(n.id)) return 7;
+                return n.type === 'ics' ? 4 : n.type === 'standard' ? 1.5 : 1.8;
               }}
               nodeResolution={8}
+              linkResolution={2}
               linkColor={(l) => {
                 const lId = getLinkId(l);
                 if (highlightLinkIds.has(lId)) return '#60a5fa'; // Bright glowing blue
-                if (highlightLinkIds.size > 0) return 'rgba(30, 41, 59, 0.08)';
-                return 'rgba(71, 85, 105, 0.4)';
+                if (highlightLinkIds.size > 0) return '#334155';
+                return LINK_COLORS[l.rel] || '#94a3b8';
               }}
-              linkWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 2.5 : 0.6)}
+              linkWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 3 : 0.65)}
+              linkOpacity={0.78}
               linkDirectionalParticles={(l) => (highlightLinkIds.has(getLinkId(l)) ? 3 : 0)}
               linkDirectionalParticleSpeed={0.007}
               linkDirectionalParticleWidth={(l) => (highlightLinkIds.has(getLinkId(l)) ? 2.5 : 0)}
               linkCurvature={0}
               onNodeClick={selectNode}
+              onNodeHover={(node) => {
+                if (containerRef.current) containerRef.current.style.cursor = node ? 'pointer' : 'grab';
+              }}
               onLinkClick={selectLink}
               backgroundColor="#070b14"
               showNavInfo={false}
