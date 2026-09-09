@@ -272,8 +272,8 @@ def get_labs_near(product: str = "", city: str = "", category: str = "", is_numb
 
 # ── Passport endpoints ────────────────────────────────────────────────────────
 @app.get("/api/passport/{product:path}")
-def api_passport(product: str):
-    return answers.passport(product)
+def api_passport(product: str, candidate_id: Optional[int] = None, city: str = ""):
+    return answers.passport(product, candidate_id=candidate_id, city=city)
 
 
 @app.get("/passport/{product:path}")

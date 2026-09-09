@@ -13,6 +13,7 @@ import sqlite3
 import json
 import pathlib
 import datetime
+import re
 from typing import List, Dict, Any, Optional
 
 DB = pathlib.Path(__file__).parent.parent / "manak.db"
@@ -82,6 +83,73 @@ def mandate_for(term: str) -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
+_MATCH_STOPWORDS = {"and", "for", "of", "the", "with", "use", "in", "to", "a", "an", "part", "general", "product"}
+_MATCH_SYNONYMS = {"bulb": "lamp", "bulbs": "lamp", "lamps": "lamp", "toys": "toy", "children": "child", "jewellery": "jewelry"}
+
+
+def _terms(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", (text or "").lower())
+    return {_MATCH_SYNONYMS.get(word, word[:-1] if word.endswith("s") and len(word) > 3 else word) for word in words if len(word) > 1 and word not in _MATCH_STOPWORDS}
+
+
+def passport_candidates(query: str, limit: int = 8) -> List[Dict[str, Any]]:
+    """Return ranked, evidence-backed QCO product items for passport disambiguation.
+
+    This deliberately does not use semantic-vector matches: a passport makes a
+    regulatory decision and must be anchored to a specific curated QCO item.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+    query_terms = _terms(query)
+    normalized_is = re.sub(r"[^A-Z0-9]", "", query.upper())
+    digits_only = re.sub(r"\D", "", query)
+
+    with conn() as c:
+        rows = [dict(row) for row in c.execute("""
+            SELECT i.id, i.qco_id, i.product_desc, i.category, i.hsn_codes, i.is_number,
+                   i.scheme, i.effective_on, i.confidence,
+                   COALESCE(i.notification_url, q.gazette_url) AS gazette_url,
+                   q.title AS qco_title, q.ministry, q.retrieved_on, q.source_url
+            FROM qco_items i LEFT JOIN qco q ON q.qco_id = i.qco_id
+        """).fetchall()]
+
+    ranked = []
+    for row in rows:
+        product_text = f"{row.get('product_desc', '')} {row.get('category', '')}"
+        product_terms = _terms(product_text)
+        score = 0.0
+        exact = False
+        if normalized_is and normalized_is == re.sub(r"[^A-Z0-9]", "", (row.get("is_number") or "").upper()):
+            score, exact = 1.0, True
+        elif digits_only and len(digits_only) >= 4 and any(digits_only == re.sub(r"\D", "", hsn) for hsn in re.split(r"[,;/\\s]+", row.get("hsn_codes") or "") if hsn):
+            score, exact = 0.98, True
+        elif query_terms and product_terms:
+            overlap = len(query_terms & product_terms)
+            # Require at least one meaningful term. Exact phrase contains are
+            # preferred, then overlap scaled by query specificity.
+            if query.lower() in product_text.lower():
+                score = 0.9
+            elif overlap:
+                score = overlap / max(len(query_terms), 1)
+                if overlap == 1 and len(query_terms) > 1:
+                    score *= 0.65
+        if score >= 0.45:
+            row["match_score"] = round(score, 3)
+            row["exact_match"] = exact
+            ranked.append(row)
+
+    ranked.sort(key=lambda item: (item["exact_match"], item["match_score"], item.get("confidence") or 0), reverse=True)
+    unique = []
+    seen = set()
+    for item in ranked:
+        key = (item.get("qco_id"), item.get("is_number"), item.get("product_desc"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique[:limit]
+
+
 def get_labs_for_standard(is_number: str, city: str = "", limit: int = 5) -> List[Dict[str, Any]]:
     """
     Finds BIS-recognized labs that specifically test a given Indian Standard (IS number).
@@ -114,6 +182,21 @@ def get_labs_for_standard(is_number: str, city: str = "", limit: int = 5) -> Lis
             )
         )
         return get_nearest_labs(city=city, category=category_guess, limit=limit)
+
+
+def get_verified_labs_for_standard(is_number: str, city: str = "", limit: int = 5) -> List[Dict[str, Any]]:
+    """Return only explicit BIS LIMS standard-scope mappings; never general labs."""
+    if not is_number:
+        return []
+    with conn() as c:
+        rows = c.execute("""
+            SELECT lab_name AS name, city, state, is_number, product_name, category,
+                   lab_code, source_url, mapping_status
+            FROM lab_standards
+            WHERE lower(is_number) LIKE ? AND lower(city) LIKE ?
+            LIMIT ?
+        """, (f"%{is_number.strip().lower()}%", f"%{city.strip().lower()}%" if city else "%", limit)).fetchall()
+    return [dict(row) for row in rows]
 
 
 def get_nearest_labs(city: str = "", category: str = "", limit: int = 5) -> List[Dict[str, Any]]:
