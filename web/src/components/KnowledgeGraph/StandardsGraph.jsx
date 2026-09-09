@@ -227,29 +227,30 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
       </div>
 
       {/* Main Visualizer & Info Panel Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '20px' }}>
         {/* Canvas Area with react-force-graph */}
         <div
           ref={containerRef}
           style={{
             position: 'relative',
-            background: '#0f172a',
-            borderRadius: '8px',
+            background: '#0a0f1d',
+            borderRadius: '10px',
             overflow: 'hidden',
-            height: '520px',
-            border: '1px solid #334155'
+            height: '760px',
+            border: '1px solid #334155',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.25)'
           }}
         >
-          {/* Zoom Controls Overlay */}
-          <div style={{ position: 'absolute', bottom: '12px', right: '12px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <button onClick={handleZoomIn} title="Zoom In" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '6px', borderRadius: '4px', cursor: 'pointer' }}>
-              <ZoomIn size={15} />
+          {/* Zoom & View Controls Overlay */}
+          <div style={{ position: 'absolute', bottom: '16px', right: '16px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <button onClick={handleZoomIn} title="Zoom In" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ZoomIn size={17} />
             </button>
-            <button onClick={handleZoomOut} title="Zoom Out" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '6px', borderRadius: '4px', cursor: 'pointer' }}>
-              <ZoomOut size={15} />
+            <button onClick={handleZoomOut} title="Zoom Out" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ZoomOut size={17} />
             </button>
-            <button onClick={handleResetZoom} title="Reset View" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '6px', borderRadius: '4px', cursor: 'pointer' }}>
-              <RotateCcw size={15} />
+            <button onClick={handleResetZoom} title="Reset View" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <RotateCcw size={17} />
             </button>
           </div>
 
@@ -285,7 +286,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
 
         {/* Selected Entity Inspector Panel */}
         {selectedNode ? (
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '520px', overflowY: 'auto' }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '760px', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 700, letterSpacing: '0.05em' }}>
                 <Info size={13} color={NODE_COLORS[selectedNode.type] || '#64748b'} />
