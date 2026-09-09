@@ -161,16 +161,24 @@ def passport(product: str) -> dict:
 def graph(highlight: Optional[list[str]] = None) -> dict:
     """
     Returns graph.json data plus highlight_nodes for the current answer.
-    Owner: Rudra.
+    Capped to demo scale (~300 nodes) for 60fps instant browser settling.
     """
     if not store:
         return {"nodes": [], "links": [], "highlight_nodes": highlight or []}
         
-    standards = store.get_all_standards()
+    standards = store.get_all_standards()[:300]
     nodes = []
+    seen = set()
     for s in standards:
+        seen.add(s["is_number"])
         group = s.get("ics_code", "").split(".")[0] if s.get("ics_code") else "0"
         nodes.append({"id": s["is_number"], "group": group, "label": s["title"]})
+        
+    # Ensure any highlighted node is included
+    if highlight:
+        for h in highlight:
+            if h not in seen:
+                nodes.append({"id": h, "group": "highlight", "label": h})
         
     return {"nodes": nodes, "links": [], "highlight_nodes": highlight or []}
 
