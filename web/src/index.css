@@ -1809,7 +1809,7 @@ h1, h2, h3, h4, h5, h6 {
   display: grid;
   grid-template-columns: 1.36fr 1fr;
   gap: 32px;
-  align-items: center;
+  align-items: start;
 }
 
 @media (max-width: 1020px) {
@@ -1832,6 +1832,10 @@ h1, h2, h3, h4, h5, h6 {
   overflow: hidden;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
   position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 540px;
+  box-sizing: border-box;
 }
 
 .hero-kg-card-header {
@@ -1841,6 +1845,9 @@ h1, h2, h3, h4, h5, h6 {
   padding: 10px 16px;
   background: rgba(15, 23, 42, 0.95);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  height: 44px;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .hero-kg-canvas-wrapper {
@@ -1855,6 +1862,9 @@ h1, h2, h3, h4, h5, h6 {
   padding: 9px 16px;
   background: rgba(15, 23, 42, 0.95);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  height: 42px;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .hero-kg-explore-link {
@@ -2349,6 +2359,8 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   width: 100%;
+  flex: 1;
+  min-height: 0;
   background: #0b1120;
 }
 
@@ -2359,12 +2371,17 @@ h1, h2, h3, h4, h5, h6 {
   padding: 12px 16px;
   position: relative;
   z-index: 2;
+  height: 126px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .assistant-platter-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  height: 22px;
   margin-bottom: 8px;
 }
 
@@ -2418,8 +2435,11 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 13.5px;
   font-weight: 500;
   color: #0f172a;
-  line-height: 1.4;
-  min-height: 22px;
+  line-height: 1.35;
+  height: 38px;
+  overflow: hidden;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .assistant-prompt-arrow {
@@ -2428,10 +2448,12 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 13px;
   user-select: none;
   margin-top: 1px;
+  flex-shrink: 0;
 }
 
 .assistant-query-text {
   flex: 1;
+  min-width: 0;
 }
 
 /* ── Single clean blinking cursor (empty span with background only) ──── */
@@ -2450,6 +2472,15 @@ h1, h2, h3, h4, h5, h6 {
   50%       { opacity: 0; }
 }
 
+.assistant-answer-slot {
+  height: 28px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
 .assistant-answer-row {
   display: flex;
   align-items: center;
@@ -2457,14 +2488,34 @@ h1, h2, h3, h4, h5, h6 {
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 0 10px;
+  height: 28px;
   font-size: 12px;
   color: #15803d;
   font-weight: 600;
+  width: 100%;
+  box-sizing: border-box;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.assistant-answer-row.visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.assistant-answer-row.hidden {
+  opacity: 0;
+  transform: translateY(2px);
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .assistant-answer-text {
   flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kg-answer-icon {
@@ -2485,14 +2536,15 @@ h1, h2, h3, h4, h5, h6 {
 .kg-canvas-container-inner {
   position: relative;
   width: 100%;
-  height: 360px;
+  flex: 1;
+  min-height: 0;
   background: #0b1120;
   overflow: hidden;
 }
 
 @media (max-width: 720px) {
-  .kg-canvas-container-inner {
-    height: 300px;
+  .hero-kg-card {
+    height: 490px;
   }
 }
 
@@ -2523,6 +2575,13 @@ h1, h2, h3, h4, h5, h6 {
   background: linear-gradient(to top, rgba(11, 17, 32, 0.95), rgba(11, 17, 32, 0));
 }
 
+.kg-traversal-slot {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .kg-traversal-path {
   display: flex;
   align-items: center;
@@ -2533,9 +2592,23 @@ h1, h2, h3, h4, h5, h6 {
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  padding: 5px 9px;
+  padding: 4px 9px;
   align-self: center;
   max-width: 98%;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.kg-traversal-path.visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.kg-traversal-path.hidden {
+  opacity: 0;
+  transform: translateY(2px);
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .kg-path-node {
