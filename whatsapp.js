@@ -17,6 +17,8 @@ const {
 } = require("@whiskeysockets/baileys");
 const qrcode = require("qrcode-terminal");
 
+const pino = require("pino");
+
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 
 async function startWhatsAppBot() {
@@ -30,7 +32,7 @@ async function startWhatsAppBot() {
     version,
     auth: state,
     printQRInTerminal: false, // handled manually via qrcode-terminal
-    logger: undefined
+    logger: pino({ level: "silent" })
   });
 
   sock.ev.on("creds.update", saveCreds);
