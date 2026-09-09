@@ -122,15 +122,27 @@ def scheme(name: str) -> Optional[dict]:
 
 
 # ── Rudra: labs() ─────────────────────────────────────────────────────────
-def labs(city: Optional[str] = None, category: Optional[str] = None) -> dict:
+def labs(product: Optional[str] = None, city: Optional[str] = None,
+         category: Optional[str] = None) -> dict:
     """
-    Lab lookup: nearest recognised BIS lab filtered by category.
-    Owner: Rudra. Do not edit this function.
+    Lab lookup: nearest recognised BIS labs for a product near a city.
+    Uses graph_queries for real graph traversal when available.
+    Owner: Rudra.
     """
-    if not store:
-        return {"labs": []}
-    results = store.get_nearest_labs(city or "", category or "", limit=3)
-    return {"labs": results}
+    try:
+        import graph_queries as gq
+        if product and city:
+            return {"labs": gq.labs_near_for_product(product, city)}
+        elif product:
+            return {"labs": gq.labs_for_product(product)[:5]}
+        elif city:
+            return {"labs": gq.labs_by_city(city)}
+    except (ImportError, FileNotFoundError):
+        pass
+    # Fallback: plain DB lookup
+    if store:
+        return {"labs": store.get_nearest_labs(city or "", category or "", limit=3)}
+    return {"labs": []}
 
 
 # ── Rudra: passport() ────────────────────────────────────────────────────
@@ -160,26 +172,24 @@ def passport(product: str) -> dict:
 # ── Rudra: graph() ───────────────────────────────────────────────────────
 def graph(highlight: Optional[list[str]] = None) -> dict:
     """
-    Returns graph.json data plus highlight_nodes for the current answer.
-    Capped to demo scale (~300 nodes) for 60fps instant browser settling.
+    Returns subgraph JSON for force-graph visualisation.
+    Uses graph_queries.subgraph_json when available; falls back to standards list.
+    Owner: Rudra.
     """
+    try:
+        import graph_queries as gq
+        center = f"std:{highlight[0]}" if highlight else None
+        data = gq.subgraph_json(center_node=center, hops=2)
+        data["highlight_nodes"] = highlight or []
+        return data
+    except (ImportError, FileNotFoundError):
+        pass
+    # Fallback: flat standards list
     if not store:
         return {"nodes": [], "links": [], "highlight_nodes": highlight or []}
-        
     standards = store.get_all_standards()[:300]
-    nodes = []
-    seen = set()
-    for s in standards:
-        seen.add(s["is_number"])
-        group = s.get("ics_code", "").split(".")[0] if s.get("ics_code") else "0"
-        nodes.append({"id": s["is_number"], "group": group, "label": s["title"]})
-        
-    # Ensure any highlighted node is included
-    if highlight:
-        for h in highlight:
-            if h not in seen:
-                nodes.append({"id": h, "group": "highlight", "label": h})
-        
+    nodes = [{"id": s["is_number"], "group": (s.get("ics_code") or "0").split(".")[0],
+              "label": s["title"]} for s in standards]
     return {"nodes": nodes, "links": [], "highlight_nodes": highlight or []}
 
 

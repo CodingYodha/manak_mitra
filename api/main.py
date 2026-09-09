@@ -32,12 +32,21 @@ def route(q: str) -> str:
 @app.on_event("startup")
 def on_startup():
     store.init()
+    # Pre-load graph into memory on startup (non-fatal if not built yet)
+    try:
+        from api import graph_store
+        if graph_store.is_ready():
+            graph_store.get()
+            print("[main] Knowledge graph loaded into memory")
+        else:
+            print("[main] graph.gpickle not found — run: python api/graph_build.py")
+    except Exception as e:
+        print(f"[main] Graph load skipped: {e}")
 
 @app.post("/chat")
 def chat(q: str, lang: str = "en", channel: str = "web"):
     intent = route(q)
-    
-    # Map intents to answer functions
+
     if intent == "mandate":
         facts = answers.mandate(q)
         if not facts.get("mandatory"):
@@ -54,27 +63,23 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
                         "is_number": r["is_number"],
                         "effective_on": r["effective_on"],
                         "hits": hits,
-                        "citations": [{
-                            "kind": "qco",
-                            "ref": r["qco_title"],
-                            "url": r["gazette_url"],
-                            "retrieved_on": r["retrieved_on"]
-                        }] + rec.get("citations", [])
+                        "citations": [{"kind": "qco", "ref": r["qco_title"],
+                                       "url": r["gazette_url"], "retrieved_on": r["retrieved_on"]}
+                                      ] + rec.get("citations", [])
                     }
                 else:
                     facts = rec
             else:
                 facts = rec
     elif intent == "scheme":
-        # Simplified: defaults to CRS for demo. A real app would extract the scheme name.
         facts = {"data": answers.scheme("CRS"), "citations": []}
     elif intent == "labs":
-        facts = {"data": answers.labs(category=q), "citations": []}
+        facts = {"data": answers.labs(product=q), "citations": []}
     elif intent == "passport":
         facts = {"data": answers.passport(q), "citations": []}
     else:
         facts = answers.recommend(q)
-        
+
     hits = facts.get("hits", [])
     top = hits[0]["score"] if hits else (1.0 if facts.get("citations") else 0.0)
 
@@ -85,14 +90,14 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
 
     citations = facts.get("citations", [])
     refs = [c["ref"] for c in citations]
-    
+
     text = guard.enforce(answers.phrase(facts, q), refs)
     store.log(ts=datetime.datetime.now().isoformat(), channel=channel, language=lang,
               intent=intent, matched_is=refs[0] if refs else None,
               top_score=top, abstained=0)
-              
+
     return {
-        "answer": text, 
+        "answer": text,
         "intent": intent,
         "abstained": False,
         "citations": citations,
@@ -100,19 +105,55 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
         "passport_url": f"/passport/{q}" if intent in ["mandate", "recommend", "passport"] else ""
     }
 
+# ── Graph endpoints ───────────────────────────────────────────────────────────
 @app.get("/graph")
-def get_graph():
-    return answers.graph()
+def get_graph(highlight: str = ""):
+    nodes = [highlight] if highlight else None
+    return answers.graph(highlight=nodes)
 
+@app.get("/graph/lab/{lab_id}")
+def lab_detail(lab_id: str):
+    try:
+        from api import graph_queries
+        return graph_queries.lab_scope(lab_id)
+    except FileNotFoundError:
+        return {"error": "Graph not built yet. Run: python api/graph_build.py"}
+
+@app.get("/graph/related/{is_number:path}")
+def related(is_number: str):
+    try:
+        from api import graph_queries
+        return {"related": graph_queries.related_standards(is_number)}
+    except FileNotFoundError:
+        return {"error": "Graph not built yet."}
+
+@app.get("/graph/ics/{ics_code}")
+def ics_chain(ics_code: str):
+    try:
+        from api import graph_queries
+        return {"chain": graph_queries.ics_ancestors(ics_code)}
+    except FileNotFoundError:
+        return {"error": "Graph not built yet."}
+
+@app.get("/graph/product/{product:path}")
+def product_path(product: str):
+    try:
+        from api import graph_queries
+        return {"paths": graph_queries.product_to_lab_path(product)}
+    except FileNotFoundError:
+        return {"error": "Graph not built yet."}
+
+# ── Lab endpoints ─────────────────────────────────────────────────────────────
 @app.get("/labs/near")
-def get_labs(city: str = "", category: str = ""):
-    return answers.labs(city, category)
+def get_labs_near(product: str = "", city: str = "", category: str = ""):
+    return answers.labs(product=product or None, city=city or None, category=category or None)
 
-@app.get("/api/passport/{product}")
+# ── Passport endpoints ────────────────────────────────────────────────────────
+@app.get("/api/passport/{product:path}")
 def api_passport(product: str):
     return answers.passport(product)
 
-@app.get("/passport/{product}")
+@app.get("/passport/{product:path}")
 def view_passport(product: str):
     data = answers.passport(product)
     html = f"""
