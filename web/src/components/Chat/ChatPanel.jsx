@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
+import { apiUrl } from '../../config';
 
 const QUICK_PROMPTS = [
   { label: '💡 9W LED Bulb (CRS)', q: 'Do I need BIS certification for 9W LED bulb?' },
@@ -63,7 +64,7 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`http://localhost:8000/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`, {
+      const response = await fetch(apiUrl(`/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`), {
         method: 'POST'
       });
 
