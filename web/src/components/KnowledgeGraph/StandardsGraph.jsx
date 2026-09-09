@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Share2, Search, Filter, ExternalLink, Info, CheckCircle2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Share2, Search, Filter, ExternalLink, Info, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Link2, MapPin, Layers, Building2, PackageCheck } from 'lucide-react';
 
 const ICS_CATEGORIES = [
   { code: 'ALL', label: 'All Clusters (23,573 Standards)' },
@@ -60,7 +60,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
   const [selectedGroup, setSelectedGroup] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(DEFAULT_GRAPH_DATA.nodes[0]);
-  const [dimensions, setDimensions] = useState({ width: 700, height: 500 });
+  const [dimensions, setDimensions] = useState({ width: 700, height: 760 });
   const [isFullGraph, setIsFullGraph] = useState(false);
   const [graphStats, setGraphStats] = useState({ total_graph_nodes: 26835, total_graph_edges: 8611, rendered_nodes: 4470, rendered_edges: 8611 });
   const [loading, setLoading] = useState(false);
@@ -75,7 +75,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
         const { clientWidth, clientHeight } = containerRef.current;
         setDimensions({
           width: clientWidth || 700,
-          height: clientHeight || 500
+          height: clientHeight || 760
         });
       }
     };
@@ -102,13 +102,15 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
           const nodes = data.nodes.map((n) => ({
             id: n.id,
             label: n.label || n.title || n.id,
-            type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : 'standard'),
+            type: n.type || (n.id.startsWith('std:') ? 'standard' : n.id.startsWith('lab:') ? 'lab' : n.id.startsWith('prod:') ? 'product' : n.id.startsWith('ics:') ? 'ics' : n.id.startsWith('qco:') ? 'qco' : 'standard'),
             group: n.group || '0',
             scheme: n.scheme || (n.id.startsWith('std:') ? 'CRS/ISI' : ''),
             status: n.status || 'ACTIVE',
             city: n.city || '',
             state: n.state || '',
-            purchase_url: n.purchase_url || ''
+            purchase_url: n.purchase_url || '',
+            notification_url: n.notification_url || '',
+            source_url: n.source_url || ''
           }));
           const links = (data.links || []).map((l) => ({
             source: l.source,
@@ -155,19 +157,52 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
     return { nodes, links };
   }, [graphData, selectedGroup, searchQuery]);
 
-  // Center node on click
+  // Find connected neighbors for the selected node
+  const selectedNodeNeighbors = useMemo(() => {
+    if (!selectedNode) return [];
+    const neighbors = [];
+    const nodeId = selectedNode.id;
+
+    graphData.links.forEach((l) => {
+      const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+      const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+
+      if (sourceId === nodeId) {
+        const targetNode = graphData.nodes.find((n) => n.id === targetId);
+        if (targetNode) neighbors.push({ node: targetNode, rel: l.rel, direction: 'outgoing' });
+      } else if (targetId === nodeId) {
+        const sourceNode = graphData.nodes.find((n) => n.id === sourceId);
+        if (sourceNode) neighbors.push({ node: sourceNode, rel: l.rel, direction: 'incoming' });
+      }
+    });
+    return neighbors;
+  }, [selectedNode, graphData]);
+
+  // Center node on click and inspect details
   const handleNodeClick = (node) => {
     setSelectedNode(node);
     if (onSelectStandard) onSelectStandard(node.id.replace('std:', ''));
     if (fgRef.current) {
-      fgRef.current.centerAt(node.x, node.y, 800);
-      fgRef.current.zoom(2.5, 800);
+      fgRef.current.centerAt(node.x, node.y, 600);
+      fgRef.current.zoom(2.2, 600);
     }
   };
 
-  const handleZoomIn = () => fgRef.current && fgRef.current.zoom(fgRef.current.zoom() * 1.3, 400);
-  const handleZoomOut = () => fgRef.current && fgRef.current.zoom(fgRef.current.zoom() / 1.3, 400);
-  const handleResetZoom = () => fgRef.current && fgRef.current.zoomToFit(400, 30);
+  const handleZoomIn = () => fgRef.current && fgRef.current.zoom(fgRef.current.zoom() * 1.3, 300);
+  const handleZoomOut = () => fgRef.current && fgRef.current.zoom(fgRef.current.zoom() / 1.3, 300);
+
+  // Reset View: resets zoom, pan, clears search query, returns to full graph overview
+  const handleReset = () => {
+    setSearchQuery('');
+    setSelectedGroup('ALL');
+    if (fgRef.current) {
+      fgRef.current.centerAt(0, 0, 600);
+      fgRef.current.zoomToFit(600, 40);
+    }
+    if (graphData.nodes.length > 0) {
+      setSelectedNode(graphData.nodes[0]);
+    }
+  };
 
   return (
     <div className="editorial-chat-box" style={{ padding: '24px' }}>
@@ -178,7 +213,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             Interactive BIS Knowledge Graph
           </h2>
           <p className="caption" style={{ marginTop: '4px' }}>
-            Powered by <strong>react-force-graph</strong>: explore 26,800+ interconnected Standards, Testing Labs, Products & QCO Orders.
+            Powered by <strong>react-force-graph</strong>: click any node to inspect regulatory relationships, certified labs & mandates.
           </p>
         </div>
 
@@ -196,6 +231,18 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             />
           </div>
 
+          <select
+            value={selectedGroup}
+            onChange={(e) => setSelectedGroup(e.target.value)}
+            style={{ height: '32px', padding: '0 10px', borderRadius: '6px', border: '1px solid #dddddd', background: '#f8fafc', fontSize: '12.5px', color: '#181d26' }}
+          >
+            {ICS_CATEGORIES.map((cat) => (
+              <option key={cat.code} value={cat.code}>
+                {cat.label}
+              </option>
+            ))}
+          </select>
+
           <button
             onClick={() => setIsFullGraph(!isFullGraph)}
             style={{
@@ -210,20 +257,43 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
               cursor: 'pointer'
             }}
           >
-            {isFullGraph ? 'Showing All 26.8k Nodes' : 'Show Connected 4.4k Cluster'}
+            {isFullGraph ? 'Showing Full 26.8k Catalogue' : 'Show Connected 4.4k Clusters'}
           </button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '11.5px', color: '#64748b' }}>
-        <span style={{ padding: '2px 8px', background: '#eff6ff', color: '#1e40af', borderRadius: '4px', fontWeight: 600 }}>
-          {graphStats.rendered_nodes?.toLocaleString()} Active Nodes
-        </span>
-        <span>•</span>
-        <span style={{ padding: '2px 8px', background: '#f0fdf4', color: '#166534', borderRadius: '4px', fontWeight: 600 }}>
-          {graphStats.rendered_edges?.toLocaleString()} Connected Relationships
-        </span>
-        {loading && <span style={{ color: '#2563eb', fontWeight: 500 }}>Refreshing graph...</span>}
+      {/* Stats Bar & Global Reset */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', fontSize: '11.5px', color: '#64748b', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ padding: '3px 9px', background: '#eff6ff', color: '#1e40af', borderRadius: '4px', fontWeight: 600 }}>
+            {graphStats.rendered_nodes?.toLocaleString()} Active Entities
+          </span>
+          <span>•</span>
+          <span style={{ padding: '3px 9px', background: '#f0fdf4', color: '#166534', borderRadius: '4px', fontWeight: 600 }}>
+            {graphStats.rendered_edges?.toLocaleString()} Connected Relationships
+          </span>
+          {loading && <span style={{ color: '#2563eb', fontWeight: 500 }}>Refreshing graph...</span>}
+        </div>
+
+        <button
+          onClick={handleReset}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            background: '#f1f5f9',
+            border: '1px solid #cbd5e1',
+            color: '#1e293b',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 600
+          }}
+        >
+          <RotateCcw size={13} />
+          Reset to Full Graph
+        </button>
       </div>
 
       {/* Main Visualizer & Info Panel Layout */}
@@ -241,7 +311,7 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             boxShadow: '0 8px 30px rgba(0,0,0,0.25)'
           }}
         >
-          {/* Zoom & View Controls Overlay */}
+          {/* Zoom Controls Overlay */}
           <div style={{ position: 'absolute', bottom: '16px', right: '16px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <button onClick={handleZoomIn} title="Zoom In" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ZoomIn size={17} />
@@ -249,17 +319,18 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             <button onClick={handleZoomOut} title="Zoom Out" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ZoomOut size={17} />
             </button>
-            <button onClick={handleResetZoom} title="Reset View" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button onClick={handleReset} title="Reset View" style={{ background: '#1e293b', border: '1px solid #475569', color: '#f8fafc', padding: '8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <RotateCcw size={17} />
             </button>
           </div>
 
           {/* Legend Overlay */}
-          <div style={{ position: 'absolute', top: '12px', left: '12px', zIndex: 10, background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(4px)', padding: '8px 12px', borderRadius: '6px', border: '1px solid #334155', fontSize: '11px', color: '#cbd5e1', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <div style={{ position: 'absolute', top: '12px', left: '12px', zIndex: 10, background: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(4px)', padding: '8px 12px', borderRadius: '6px', border: '1px solid #334155', fontSize: '11px', color: '#cbd5e1', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.standard }}></span> Standard</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.product }}></span> Product</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.lab }}></span> Lab</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.ics }}></span> ICS Sector</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS.qco }}></span> QCO Order</span>
           </div>
 
           <ForceGraph2D
@@ -268,9 +339,9 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
             height={dimensions.height}
             graphData={filteredData}
             nodeLabel={(n) => `${n.id}: ${n.label || ''}`}
-            nodeColor={(n) => NODE_COLORS[n.type] || '#94a3b8'}
+            nodeColor={(n) => (selectedNode && selectedNode.id === n.id ? '#ffffff' : NODE_COLORS[n.type] || '#94a3b8')}
             nodeRelSize={5}
-            nodeVal={(n) => (n.type === 'ics' ? 12 : n.type === 'standard' ? 8 : 6)}
+            nodeVal={(n) => (selectedNode && selectedNode.id === n.id ? 15 : n.type === 'ics' ? 12 : n.type === 'standard' ? 8 : 6)}
             linkColor={() => '#475569'}
             linkWidth={1.5}
             linkDirectionalArrowLength={3.5}
@@ -288,61 +359,112 @@ export default function StandardsGraph({ focusedStandard, onSelectStandard }) {
         {selectedNode ? (
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '760px', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 700, letterSpacing: '0.05em' }}>
-                <Info size={13} color={NODE_COLORS[selectedNode.type] || '#64748b'} />
+              {/* Header Badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', textTransform: 'uppercase', color: NODE_COLORS[selectedNode.type] || '#64748b', fontWeight: 800, letterSpacing: '0.05em' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: NODE_COLORS[selectedNode.type] || '#64748b' }}></span>
                 {selectedNode.type?.toUpperCase() || 'ENTITY'} DETAILS
               </div>
 
-              <h3 style={{ fontSize: '17px', color: '#0f172a', marginTop: '8px', marginBottom: '8px', fontWeight: 700, lineHeight: 1.3 }}>
+              {/* Entity Title */}
+              <h3 style={{ fontSize: '18px', color: '#0f172a', marginTop: '8px', marginBottom: '8px', fontWeight: 700, lineHeight: 1.3 }}>
                 {selectedNode.id}
               </h3>
 
+              {/* Description */}
               <p style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5, marginBottom: '16px' }}>
                 {selectedNode.label || selectedNode.title || 'No description available.'}
               </p>
 
+              {/* Specific Properties Table */}
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12.5px' }}>
                 {selectedNode.city && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Location:</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={13} /> Location:</span>
                     <strong style={{ color: '#0f172a' }}>{selectedNode.city}, {selectedNode.state}</strong>
                   </div>
                 )}
                 {selectedNode.scheme && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Scheme:</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><Layers size={13} /> Certification Scheme:</span>
                     <strong style={{ color: '#0f172a' }}>{selectedNode.scheme}</strong>
                   </div>
                 )}
                 {selectedNode.group && selectedNode.group !== 'lab' && selectedNode.group !== 'product' && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>ICS Code:</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><Info size={13} /> ICS Code:</span>
                     <span style={{ color: '#0f172a', fontWeight: 600 }}>ICS {selectedNode.group}</span>
                   </div>
                 )}
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#64748b' }}>Status:</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={13} /> Status:</span>
                   <span style={{ color: '#16a34a', fontWeight: 600 }}>● {selectedNode.status || 'ACTIVE'}</span>
                 </div>
               </div>
+
+              {/* Connected Relationships & Neighbors Section */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '16px', marginTop: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Link2 size={14} color="#2563eb" />
+                  Connected Graph Relationships ({selectedNodeNeighbors.length}):
+                </div>
+
+                {selectedNodeNeighbors.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '240px', overflowY: 'auto' }}>
+                    {selectedNodeNeighbors.map((nb, i) => (
+                      <div
+                        key={i}
+                        onClick={() => handleNodeClick(nb.node)}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '6px',
+                          padding: '8px 10px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#2563eb')}
+                        onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '2px' }}>
+                          <span style={{ color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>
+                            {nb.rel}
+                          </span>
+                          <span style={{ color: NODE_COLORS[nb.node.type] || '#2563eb', fontWeight: 700 }}>
+                            {nb.node.type}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 600 }}>
+                          {nb.node.id}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {nb.node.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '11.5px', color: '#94a3b8' }}>No directly linked entities in active cluster filter.</p>
+                )}
+              </div>
             </div>
 
+            {/* Direct Official Link */}
             <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '14px', marginTop: '14px' }}>
               <a
-                href={selectedNode.purchase_url || 'https://standardsbis.in'}
+                href={selectedNode.purchase_url || selectedNode.notification_url || selectedNode.source_url || 'https://standardsbis.in'}
                 target="_blank"
                 rel="noreferrer"
                 className="btn-secondary"
-                style={{ width: '100%', padding: '9px', fontSize: '12.5px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', textDecoration: 'none' }}
+                style={{ width: '100%', padding: '9px', fontSize: '12.5px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', textDecoration: 'none', fontWeight: 600 }}
               >
-                View on BIS Portal
+                Inspect Official BIS Record
                 <ExternalLink size={13} />
               </a>
             </div>
           </div>
         ) : (
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '13px' }}>
-            Click any node on the graph to inspect its details.
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '13px' }}>
+            Click any node on the graph to inspect its details and connected relationships.
           </div>
         )}
       </div>
