@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, ImageUp, LoaderCircle, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, ImageUp, LoaderCircle, ShieldAlert, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 const apiUrl = (path) => `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')}${path}`;
 
@@ -62,8 +62,39 @@ export default function MarkVerifier() {
 
       {state === 'loading' && <div style={{ padding: '18px', textAlign: 'center', color: '#64748b' }}>Verifying through the local mark-validation service…</div>}
       {error && <div style={{ marginTop: '18px', padding: '14px', background: '#fef2f2', color: '#991b1b', borderRadius: '8px' }}>{error}</div>}
-      {result && <div className={`verification-result ${result.valid ? 'valid' : 'invalid'}`}><div className="verification-heading">{result.valid ? <CheckCircle2 /> : <ShieldAlert />}<div><span className="result-label">FORMAT CHECK</span><strong>{result.valid ? 'Structurally valid format' : 'Structure could not be verified'}</strong></div><span className="verification-type">{result.mark_type}</span></div><p className="verification-reason">{result.reason}</p>{result.ocr_text && <div className="verification-meta"><strong>OCR result</strong><span>{result.ocr_text}</span></div>}<div className="verification-meta"><strong>Next check</strong><span>{result.official_handoff || result.handoff}</span></div>{result.citations?.length > 0 && <div className="verification-sources">{result.citations.map((citation, index) => citation.url ? <a key={index} href={citation.url} target="_blank" rel="noreferrer">{citation.ref}</a> : <span key={index}>{citation.ref}</span>)}</div>}</div>}
-      <p style={{ marginTop: '18px', padding: '12px 14px', border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: '6px', color: '#64748b', fontSize: '12px' }}>This tool validates format and, when available, OCR extraction. It cannot access closed government databases, so always use the linked official portal or BIS CARE to confirm a licence, HUID, brand, or manufacturer.</p>
+      {result && <div className={`verification-result ${result.status === 'structurally_plausible' ? 'valid' : result.status === 'suspicious' ? 'suspicious' : 'invalid'}`} style={{ 
+        marginTop: '18px', padding: '20px', borderRadius: '8px', 
+        background: result.status === 'structurally_plausible' ? '#f0fdf4' : result.status === 'suspicious' ? '#fffbeb' : '#fef2f2', 
+        border: `1px solid ${result.status === 'structurally_plausible' ? '#bbf7d0' : result.status === 'suspicious' ? '#fde68a' : '#fecaca'}` 
+      }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {result.status === 'structurally_plausible' ? <CheckCircle2 color="#16a34a" /> : result.status === 'suspicious' ? <AlertTriangle color="#d97706" /> : <ShieldAlert color="#dc2626" />}
+          <strong style={{ color: result.status === 'structurally_plausible' ? '#166534' : result.status === 'suspicious' ? '#92400e' : '#991b1b' }}>
+            {result.status === 'structurally_plausible' ? 'Structurally plausible' : result.status === 'suspicious' ? 'Suspicious / low-confidence OCR' : 'Invalid format'}
+          </strong>
+          <span style={{ fontSize: '12px', color: '#475569', marginLeft: 'auto' }}>{result.mark_type}</span>
+        </div>
+        <p style={{ margin: '12px 0', lineHeight: 1.5, color: '#334155' }}>{result.reason}</p>
+        
+        {result.evidence && (
+          <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {result.evidence.dictionary_word && <span style={{ background: '#fee2e2', padding: '2px 6px', borderRadius: '4px', color: '#991b1b' }}>Dictionary word detected</span>}
+            {result.evidence.all_letters && !result.evidence.dictionary_word && <span style={{ background: '#ffedd5', padding: '2px 6px', borderRadius: '4px', color: '#9a3412' }}>Missing digits</span>}
+            {result.evidence.all_digits && <span style={{ background: '#ffedd5', padding: '2px 6px', borderRadius: '4px', color: '#9a3412' }}>Missing letters</span>}
+            {result.evidence.hallmark_context && <span style={{ background: '#e0f2fe', padding: '2px 6px', borderRadius: '4px', color: '#075985' }}>Context found</span>}
+          </div>
+        )}
+
+        {result.ocr_text && <div style={{ fontSize: '12px', color: '#475569', marginBottom: '10px', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}><strong>OCR text:</strong> {result.ocr_text}</div>}
+        <div style={{ fontSize: '13px', color: '#475569' }}><strong>Official next check:</strong> {result.official_handoff || result.handoff}</div>
+        
+        {result.citations?.length > 0 && (
+          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            {result.citations.map((citation, index) => citation.url ? <a key={index} href={citation.url} target="_blank" rel="noreferrer" style={{ color: '#1b61c9', fontSize: '13px' }}>{citation.ref}</a> : <span key={index} style={{ fontSize: '13px' }}>{citation.ref}</span>)}
+          </div>
+        )}
+      </div>}
+      <p style={{ marginTop: '18px', padding: '12px 14px', border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: '6px', color: '#64748b', fontSize: '12px' }}><strong>Disclaimer:</strong> {result?.disclaimer || "This tool validates format and, when available, OCR extraction. It cannot access closed government databases, so always use the linked official portal or BIS CARE to confirm a licence, HUID, brand, or manufacturer."}</p>
     </div>
   </div>;
 }
