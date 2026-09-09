@@ -15,7 +15,7 @@
 ---
 
 ## 📌 Executive Summary
-i also want the badge 
+
 Navigating India's **Quality Control Orders (QCOs)**, **Indian Standards (IS)**, and BIS certification schemes (**ISI**, **CRS**, **FMCS**, **Hallmarking**) is traditionally complex, fragmented, and intimidating for Micro, Small & Medium Enterprises (MSMEs), foreign manufacturers, and everyday consumers.
 
 **Manak Mitra** is an authoritative, multi-channel, multilingual compliance assistant engineered with a **zero-hallucination** architecture. Unlike generic conversational bots that invent standard numbers when uncertain, Manak Mitra couples deterministic SQL queries and multilingual dense retrieval with strict guardrails: **it refuses to answer when official data is absent** and directs users to the official BIS helpline.
