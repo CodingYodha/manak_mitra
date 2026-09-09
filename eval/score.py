@@ -3,7 +3,8 @@
 Manak Mitra — Evaluation Scorer
 Owner: Shreya (script) + Shivaprasad (retrieval logic input)
 
-Reads eval/golden40.jsonl and evaluates the live system.
+Reads eval/golden40.jsonl and evaluates the live system. The historical file
+name is retained, although the checked-in set currently contains 26 cases.
 Can run in two modes:
   --mode search  : calls search.find() directly (retrieval-only, no API needed)
   --mode api     : calls POST localhost:8000/chat (full pipeline, needs uvicorn running)
@@ -17,7 +18,7 @@ Usage:
 Metrics reported:
     accuracy@1        — correct IS number appears as citations[0]["ref"]
     accuracy@3        — correct IS number appears in citations[0..2]
-    citation_correct  — non-abstained answers have non-empty citations[]
+    citation_present  — non-abstained answers have non-empty citations[]
     abstention_prec   — abstention cases correctly refused (abstained: true)
 """
 import argparse
@@ -27,6 +28,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from typing import Optional
 
 # Ensure UTF-8 output on Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
@@ -196,7 +198,7 @@ def _compute_metrics(results: list[dict]) -> dict:
         "abstain_cases":     len(abs_cases),
         "accuracy_at_1":     at1,
         "accuracy_at_3":     at3,
-        "citation_correct":  cite,
+        "citation_present":  cite,
         "abstention_prec":   abst,
         "failures":          failures,
         "abstain_failures":  abs_failures,
@@ -204,7 +206,7 @@ def _compute_metrics(results: list[dict]) -> dict:
     }
 
 
-def print_report(metrics: dict, output_path: pathlib.Path | None = None):
+def print_report(metrics: dict, output_path: Optional[pathlib.Path] = None):
     lines = []
     lines.append("")
     lines.append("=" * 60)
@@ -217,7 +219,7 @@ def print_report(metrics: dict, output_path: pathlib.Path | None = None):
     lines.append("")
     lines.append(f"  accuracy@1:        {metrics['accuracy_at_1']:.2f}  (target ≥ 0.60)")
     lines.append(f"  accuracy@3:        {metrics['accuracy_at_3']:.2f}  (target ≥ 0.80)")
-    lines.append(f"  citation_correct:  {metrics['citation_correct']:.2f}  (target ≥ 0.90)")
+    lines.append(f"  citation_present:  {metrics['citation_present']:.2f}  (target ≥ 0.90)")
     lines.append(f"  abstention_prec:   {metrics['abstention_prec']:.2f}  (target = 1.00)")
     lines.append("")
 
@@ -284,7 +286,7 @@ def main():
     ok = (
         metrics["accuracy_at_1"]   >= 0.60 and
         metrics["accuracy_at_3"]   >= 0.80 and
-        metrics["citation_correct"] >= 0.90 and
+        metrics["citation_present"] >= 0.90 and
         metrics["abstention_prec"] >= 1.00
     )
     sys.exit(0 if ok else 1)

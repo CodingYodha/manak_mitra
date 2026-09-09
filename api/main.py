@@ -116,31 +116,9 @@ def chat(q: str, lang: str = "en", channel: str = "web"):
         facts = answers.mandate(q)
         if not facts.get("mandatory"):
             rec = answers.recommend(q)
-            hits = rec.get("hits", [])
-            if hits:
-                top_hit = hits[0]
-                qco_rows = store.mandate_for(top_hit["is_number"])
-                if qco_rows:
-                    r = qco_rows[0]
-                    facts = {
-                        "mandatory": True,
-                        "scheme": r["scheme"],
-                        "is_number": r["is_number"],
-                        "effective_on": r.get("effective_on"),
-                        "qco_title": r.get("qco_title"),
-                        "hits": hits,
-                        "citations": [{
-                            "kind": "qco",
-                            "ref": r.get("is_number") or r.get("qco_title"),
-                            "title": r.get("qco_title"),
-                            "url": r.get("gazette_url"),
-                            "retrieved_on": r.get("retrieved_on", "2026-09-09")
-                        }] + rec.get("citations", [])
-                    }
-                else:
-                    facts = rec
-            else:
-                facts = rec
+            # A semantic standard match is discovery material only. It must
+            # never be converted into a legal QCO/mandatory determination.
+            facts = rec
 
     else:
         facts = answers.recommend(q)

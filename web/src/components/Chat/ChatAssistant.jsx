@@ -13,6 +13,7 @@ import {
   User,
   ExternalLink
 } from 'lucide-react';
+import { apiUrl } from '../../config';
 
 const QUICK_PROMPTS = [
   { label: '💡 9W LED Bulb (CRS)', q: 'Do I need BIS certification for 9W LED bulb?' },
@@ -21,47 +22,6 @@ const QUICK_PROMPTS = [
   { label: '🇮🇳 हिंदी प्रश्न (Voice)', q: 'क्या मुझे एलईडी बल्ब के लिए बीआईएस चाहिए?' },
   { label: '🚫 Swallow (Refusal Demo)', q: 'What is the airspeed of an unladen swallow?' }
 ];
-
-// Offline Standalone Knowledge Base (guarantees demo never breaks)
-const FALLBACK_ANSWERS = {
-  'led': {
-    answer: 'Based on official sources, 9W self-ballasted LED lamps are covered by the Electronics and IT Goods QCO. Mandatory registration under Compulsory Registration Scheme (CRS) is required before sale or import.',
-    citations: [
-      { kind: 'qco', ref: 'Electronics and IT Goods (Requirement for Compulsory Registration) Order', url: 'https://egazette.gov.in', retrieved_on: '2026-09-09' },
-      { kind: 'standard', ref: 'IS 16102 (Part 1)', status: 'ACTIVE', is_free: false }
-    ],
-    highlight_nodes: ['IS 16102 (Part 1)'],
-    abstained: false,
-    passport_product: '9W LED Bulb (Self-Ballasted)'
-  },
-  'toy': {
-    answer: 'Children plastic toys are covered by the Toys (Quality Control) Order notified by DPIIT. Mandatory certification under the ISI Mark Scheme (Scheme-I) applies. Testing against physical, mechanical, and flammability parameters is required.',
-    citations: [
-      { kind: 'qco', ref: 'Toys (Quality Control) Order', url: 'https://egazette.gov.in', retrieved_on: '2026-09-09' },
-      { kind: 'standard', ref: 'IS 9873 (Part 1)', status: 'ACTIVE', is_free: false }
-    ],
-    highlight_nodes: ['IS 9873 (Part 1)'],
-    abstained: false,
-    passport_product: "Children's Plastic Toy"
-  },
-  'gold': {
-    answer: '22K gold jewellery is covered under the mandatory Hallmarking Order by DoCA. Articles must bear the BIS logo, 916 purity hallmark, and a 6-digit alphanumeric HUID laser inscribed at an Assaying & Hallmarking center.',
-    citations: [
-      { kind: 'qco', ref: 'Hallmarking of Gold Jewellery and Gold Artefacts Order', url: 'https://egazette.gov.in', retrieved_on: '2026-09-09' },
-      { kind: 'standard', ref: 'IS 1417', status: 'ACTIVE', is_free: false }
-    ],
-    highlight_nodes: ['IS 1417'],
-    abstained: false,
-    passport_product: '22K Gold Ring'
-  },
-  'swallow': {
-    answer: "I can't answer this from official sources. Please contact the BIS helpline on 1800-11-4000, or see bis.gov.in.",
-    citations: [],
-    highlight_nodes: [],
-    abstained: true,
-    passport_product: null
-  }
-};
 
 export default function ChatAssistant({ onSelectNode, onViewPassport, initialQuery }) {
   const [messages, setMessages] = useState([
@@ -113,8 +73,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
     setLoading(true);
 
     try {
-      // 1. Try real FastAPI backend on port 8000
-      const response = await fetch(`http://localhost:8000/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`, {
+      const response = await fetch(apiUrl(`/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`), {
         method: 'POST'
       });
 
@@ -143,46 +102,12 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
         onSelectNode(data.highlight_nodes[0]);
       }
     } catch (err) {
-      console.log('Using robust client-side compliance response engine...');
-      // 2. Intelligent client-side fallback (Zero demo crashes!)
-      const qLower = q.toLowerCase();
-      let match = null;
-
-      if (qLower.includes('led') || qLower.includes('एलईडी') || qLower.includes('bulb')) {
-        match = FALLBACK_ANSWERS['led'];
-      } else if (qLower.includes('toy') || qLower.includes('खिलौने') || qLower.includes('plastic')) {
-        match = FALLBACK_ANSWERS['toy'];
-      } else if (qLower.includes('gold') || qLower.includes('ring') || qLower.includes('हॉलमार्क') || qLower.includes('huid') || qLower.includes('jewellery')) {
-        match = FALLBACK_ANSWERS['gold'];
-      } else if (qLower.includes('swallow') || qLower.includes('airspeed') || qLower.includes('weather') || qLower.includes('joke')) {
-        match = FALLBACK_ANSWERS['swallow'];
-      } else {
-        match = {
-          answer: `Based on official BIS catalogues, requirements for "${q}" depend on the notified Quality Control Order. Please search by specific IS Number or HSN code for verified testing parameters.`,
-          citations: [{ kind: 'standard', ref: 'BIS General Standards Registry', status: 'ACTIVE' }],
-          highlight_nodes: [],
-          abstained: false,
-          passport_product: q
-        };
-      }
-
-      const botMsg = {
+      setMessages((prev) => [...prev, {
         id: Date.now() + 1,
         sender: 'bot',
-        text: match.answer,
-        citations: match.citations,
-        abstained: match.abstained,
-        highlight_nodes: match.highlight_nodes,
-        passport_url: match.passport_product ? `/passport/${match.passport_product}` : '',
-        product: match.passport_product || q,
-        timestamp: 'Now'
-      };
-
-      setMessages((prev) => [...prev, botMsg]);
-
-      if (match.highlight_nodes && match.highlight_nodes.length > 0 && onSelectNode) {
-        onSelectNode(match.highlight_nodes[0]);
-      }
+        text: 'The verified compliance service is unavailable right now. No offline answer was generated; please retry after the service is restored.',
+        citations: [], abstained: true, timestamp: 'Now'
+      }]);
     } finally {
       setLoading(false);
     }
@@ -246,7 +171,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#15803d', fontWeight: 500 }}>
           <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }}></span>
-          Zero-Hallucination Guardrails
+          Evidence-Gated Answers
         </div>
       </div>
 
@@ -279,7 +204,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
                 <div className="refusal-alert-card">
                   <div className="refusal-alert-title">
                     <ShieldAlert size={16} />
-                    Official Refusal — Zero-Hallucination Guard Active
+                    Official Refusal — Evidence Guard Active
                   </div>
                   <div>
                     This inquiry cannot be answered from authenticated gazettes or published Indian Standards.

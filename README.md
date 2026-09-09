@@ -157,7 +157,7 @@ manak-mitra/
 │       ├── qco/
 │       └── schemes/
 ├── eval/                               # Evaluation & benchmarking framework
-│   ├── golden40.jsonl                  # 40 curated test cases with ground-truth expectations
+│   ├── golden40.jsonl                  # Historical name; 26 checked-in ground-truth cases
 │   ├── results.txt                     # Benchmark run output
 │   └── score.py                        # Evaluation runner (accuracy@k, citation, abstention)
 ├── MDs/                                # Project documentation & runbooks
@@ -238,7 +238,7 @@ Scan the terminal QR code using WhatsApp on your dedicated demo smartphone.
 
 ##  Evaluation & Benchmarks
 
-Manak Mitra includes an automated evaluation harness (`eval/score.py`) executing against `eval/golden40.jsonl` to assess retrieval precision, citation authenticity, and refusal accuracy:
+Manak Mitra includes an automated evaluation harness (`eval/score.py`) executing against `eval/golden40.jsonl`. The file currently contains 26 checked-in cases; it assesses retrieval precision, citation presence, and refusal accuracy. Citation source validity is a separate verification requirement, not something this local retrieval benchmark proves.
 
 ```bash
 python eval/score.py
@@ -249,7 +249,7 @@ python eval/score.py
 |---|---|---|
 | **accuracy@1** | $\ge 60\%$ | Top-1 retrieved standard exactly matches ground-truth IS number |
 | **accuracy@3** | $\ge 80\%$ | Target standard appears in top-3 retrieved candidates |
-| **citation_correctness** | $\ge 90\%$ | Citations map to existing, unexpired e-Gazette QCO notifications |
+| **citation_presence** | $\ge 90\%$ | Non-refused answers carry at least one retrieved citation |
 | **abstention_precision** | **$100\%$** | Zero hallucinated answers for out-of-domain queries |
 
 ---

@@ -71,6 +71,10 @@ def recommend(description: str) -> Dict[str, Any]:
     return {
         "hits": hits,
         "citations": citations,
+        "evidence": {
+            "kind": "catalogue_discovery",
+            "message": "Standard-catalogue matches are discovery results, not QCO or legal applicability determinations."
+        },
         "_top_score": hits[0].get("dense_score", hits[0]["score"]),
     }
 
@@ -83,6 +87,12 @@ def mandate(term: str) -> Dict[str, Any]:
         return {"mandatory": None, "citations": []}
 
     rows = store.mandate_for(term)
+    if not rows:
+        # A mandate answer may use only a lexical match to a curated QCO item;
+        # never promote a semantic-vector hit into a legal determination.
+        candidates = store.passport_candidates(term, limit=2)
+        if candidates and candidates[0].get("match_score", 0) >= 0.75:
+            rows = [candidates[0]]
     if not rows:
         return {"mandatory": None, "citations": []}
 
@@ -405,6 +415,11 @@ def phrase(facts: Dict[str, Any], question: str) -> str:
         f"3. Mention applicable scheme (ISI, CRS, Hallmarking) or lab if present in facts."
     )
 
+    # Regulatory outputs must be reproducible by default.  An operator may opt
+    # into paraphrasing only after configuring and monitoring a grounded model.
+    if os.environ.get("ENABLE_GROUNDED_LLM", "").lower() not in {"1", "true", "yes"}:
+        return _deterministic_phrase(facts)
+
     # 1. Google Gemini
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if gemini_key:
@@ -429,7 +444,11 @@ def phrase(facts: Dict[str, Any], question: str) -> str:
         res = _call_ollama_llm(p, ollama_host)
         if res: return res
 
-    # 5. Deterministic High-Quality Fallback
+    return _deterministic_phrase(facts)
+
+
+def _deterministic_phrase(facts: Dict[str, Any]) -> str:
+    """Render only data already present in structured, cited backend facts."""
     citations = facts.get("citations", [])
     standards = [c["ref"] for c in citations if c.get("kind") == "standard"]
     qcos = [c for c in citations if c.get("kind") == "qco"]
@@ -459,7 +478,7 @@ def phrase(facts: Dict[str, Any], question: str) -> str:
 
     if standards:
         std_list = ", ".join(standards[:2])
-        return f"Based on official BIS publications, the applicable Indian Standard is {std_list}. Please verify the latest amendments on standardsbis.in."
+        return f"The standards catalogue matched {std_list}. This is a discovery result, not a mandatory-certification determination; verify the current publication and amendments on standardsbis.in."
 
     return "Based on official BIS records, please verify with the official BIS portal or contact the helpline on 1800-11-4000."
 

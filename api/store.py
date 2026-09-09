@@ -83,7 +83,7 @@ def mandate_for(term: str) -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
-_MATCH_STOPWORDS = {"and", "for", "of", "the", "with", "use", "in", "to", "a", "an", "part", "general", "product"}
+_MATCH_STOPWORDS = {"and", "for", "of", "the", "with", "use", "in", "to", "a", "an", "part", "general", "product", "do", "i", "need", "bis", "certification", "mandatory", "is", "are", "what", "which", "does", "under", "india", "indian", "please", "number", "standard", "22k", "24k", "9w"}
 _MATCH_SYNONYMS = {"bulb": "lamp", "bulbs": "lamp", "lamps": "lamp", "toys": "toy", "children": "child", "jewellery": "jewelry"}
 
 

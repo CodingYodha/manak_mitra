@@ -138,6 +138,14 @@ def find(query: str, k: int = 5, ics_prefix: Optional[str] = None) -> list[dict]
 
     import re
 
+    # A user-supplied IS number is an identifier, not a semantic query. Give
+    # exact catalogue records priority so that an unrelated title embedding
+    # cannot outrank the requested standard.
+    requested_is = {
+        match.replace(" ", "").upper()
+        for match in re.findall(r"\bIS\s*\d{3,5}\b", query, flags=re.I)
+    }
+
     # Expand Hindi terms to ensure cross-lingual coverage
     expanded_q = query
     for h_word, eng in HINDI_TERM_EXPANSIONS.items():
@@ -167,6 +175,10 @@ def find(query: str, k: int = 5, ics_prefix: Optional[str] = None) -> list[dict]
         matches = sum(1 for t in key_tokens if t in title_lower)
         if matches > 0:
             score += 0.12 * matches
+
+        meta_is = re.sub(r"\s+", "", str(m.get("is_number", ""))).upper()
+        if any(meta_is.startswith(is_number) for is_number in requested_is):
+            score = max(score, 2.0)
 
         combined_scores[idx] = score
 

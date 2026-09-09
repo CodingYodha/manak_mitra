@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { apiUrl } from '../../config';
 import {
   Send,
   Mic,
@@ -63,7 +64,7 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`http://localhost:8000/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`, {
+      const response = await fetch(apiUrl(`/chat?q=${encodeURIComponent(q)}&lang=${lang}&channel=web`), {
         method: 'POST'
       });
 
@@ -93,13 +94,13 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
       }
     } catch (err) {
       console.error('Chat error:', err);
-      // Clean fallback if local server is starting
+      // Do not present an offline answer as verified compliance guidance.
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           sender: 'bot',
-          text: 'Unable to reach backend on port 8000. Please verify the FastAPI server is running with `uvicorn api.main:app`.',
+          text: 'The verified compliance service is unavailable right now. No offline answer was generated; please retry after the service is restored.',
           citations: [],
           abstained: true,
           timestamp: 'Now'
@@ -167,7 +168,7 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#15803d', fontWeight: 500 }}>
           <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }}></span>
-          Zero-Hallucination Guardrails
+          Evidence-Gated Answers
         </div>
       </div>
 
@@ -200,7 +201,7 @@ export default function ChatPanel({ onSelectNode, onViewPassport }) {
                 <div className="refusal-alert-card">
                   <div className="refusal-alert-title">
                     <ShieldAlert size={16} />
-                    Official Refusal — Zero-Hallucination Guard Active
+                    Official Refusal — Evidence Guard Active
                   </div>
                   <div>
                     This inquiry cannot be answered from authenticated gazettes or published Indian Standards.
