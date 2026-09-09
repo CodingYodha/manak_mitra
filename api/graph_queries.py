@@ -331,6 +331,25 @@ def standards_clustered(sector_code: str, k: int = 20) -> list[dict]:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # FEATURE 20 — Subgraph JSON for force-graph visualisation
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_POS_CACHE = None
+
+def _get_3d_positions() -> dict:
+    global _POS_CACHE
+    if _POS_CACHE is not None:
+        return _POS_CACHE
+    import os, json
+    pos_file = os.path.join(os.path.dirname(__file__), "..", "web", "public", "graph_3d.json")
+    if os.path.exists(pos_file):
+        try:
+            with open(pos_file, "r") as f:
+                d = json.load(f)
+                _POS_CACHE = {n["id"]: {"x": n.get("x", 0), "y": n.get("y", 0), "z": n.get("z", 0)} for n in d.get("nodes", [])}
+                return _POS_CACHE
+        except Exception:
+            pass
+    _POS_CACHE = {}
+    return _POS_CACHE
+
 def subgraph_json(center_node: Optional[str] = None, hops: int = 2, full: bool = False, connected_only: bool = True) -> dict:
     G = _G()
     try:
@@ -345,8 +364,14 @@ def subgraph_json(center_node: Optional[str] = None, hops: int = 2, full: bool =
             connected = [n for n in G.nodes() if G.degree(n) > 0]
             sub = G.subgraph(connected)
 
-        nodes = [{"id": n, **{k: v for k, v in d.items() if isinstance(v, (str, int, float, bool))}}
-                 for n, d in sub.nodes(data=True)]
+        pos_map = _get_3d_positions()
+        nodes = []
+        for n, d in sub.nodes(data=True):
+            node_dict = {"id": n, **{k: v for k, v in d.items() if isinstance(v, (str, int, float, bool))}}
+            if n in pos_map:
+                node_dict.update(pos_map[n])
+            nodes.append(node_dict)
+
         links = [{"source": u, "target": v, "rel": d.get("rel", "")}
                  for u, v, d in sub.edges(data=True)]
         return {
