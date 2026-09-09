@@ -26,7 +26,11 @@ export default function Sidebar({
   isCollapsed = false,
   onToggleCollapse,
   isSlidHidden = false,
-  onToggleSlide
+  onToggleSlide,
+  sidebarWidth = 270,
+  isResizing = false,
+  onStartResize,
+  onResetResize
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [touchStartX, setTouchStartX] = useState(null);
@@ -219,9 +223,12 @@ export default function Sidebar({
         />
       )}
 
-      {/* 3. PERSISTENT FIXED SIDEBAR (Slidable off-screen and Collapsible to icon-rail) */}
+      {/* 3. PERSISTENT FIXED SIDEBAR (Collapsible, Slidable, and Dynamically Resizable) */}
       <aside
         className={`airtable-sidebar ${mobileOpen ? 'mobile-open' : ''} ${isSlidHidden ? 'slid-hidden' : ''}`}
+        style={{
+          width: isCollapsed ? 68 : isSlidHidden ? 0 : sidebarWidth
+        }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
@@ -238,7 +245,7 @@ export default function Sidebar({
                 }}
               >
                 <div className="nav-logo-mark">M</div>
-                <div>
+                <div style={{ minWidth: 0, overflow: 'hidden' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span className="nav-title">Manak Mitra</span>
                     <span className="hindi">मानक मित्र</span>
@@ -249,7 +256,7 @@ export default function Sidebar({
                 </div>
               </a>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
                 {/* Desktop Collapse Toggle Button (shrink to 68px rail) */}
                 <button
                   className="sidebar-toggle-btn"
@@ -416,7 +423,7 @@ export default function Sidebar({
                 <div className="helpline-icon-wrap">
                   <PhoneCall size={16} />
                 </div>
-                <div>
+                <div style={{ minWidth: 0, overflow: 'hidden' }}>
                   <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 600 }}>
                     OFFICIAL TOLL-FREE
                   </div>
@@ -450,6 +457,20 @@ export default function Sidebar({
             </a>
           )}
         </div>
+
+        {/* 4. DYNAMIC EDGE RESIZE / SLIDER HANDLE (Desktop drag-to-resize) */}
+        {!isSlidHidden && (
+          <div
+            className={`sidebar-resize-handle ${isResizing ? 'resizing' : ''}`}
+            onMouseDown={onStartResize}
+            onTouchStart={onStartResize}
+            onDoubleClick={onResetResize}
+            title="Drag edge to dynamically resize sidebar width · Double click to reset to 270px"
+            aria-label="Resize sidebar width"
+          >
+            <div className="resize-handle-line" />
+          </div>
+        )}
       </aside>
     </>
   );

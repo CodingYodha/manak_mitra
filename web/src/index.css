@@ -809,6 +809,71 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+/* Dynamic Resizable Edge Slider (Desktop Slidable Width) */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.resize-handle-line {
+  width: 2px;
+  height: 100%;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.sidebar-resize-handle:hover .resize-handle-line,
+.sidebar-resize-handle.resizing .resize-handle-line {
+  background-color: var(--color-ink);
+}
+
+/* Center grip affordance indicator */
+.sidebar-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 36px;
+  border-radius: 2px;
+  background-color: #cbd5e1;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.resizing::after {
+  opacity: 1;
+  background-color: var(--color-ink);
+}
+
+/* While actively dragging edge: 0ms latency, prevent text selection */
+.sidebar-resizing,
+.sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.sidebar-resizing .airtable-sidebar,
+.sidebar-resizing .app-main-content {
+  transition: none !important;
+}
+
+@media (max-width: 1023px) {
+  .sidebar-resize-handle {
+    display: none !important;
+  }
+}
+
 /* Brand & Logo Common */
 .nav-brand {
   display: flex;

@@ -42,6 +42,73 @@ export default function App() {
     }
   });
 
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('manak_sidebar_width');
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (val >= 180 && val <= 520) return val;
+      }
+    } catch {}
+    return 270;
+  });
+
+  const [isResizing, setIsResizing] = useState(false);
+
+  // Resize drag handling across window
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e) => {
+      const clientX = e.clientX;
+      if (clientX < 130) {
+        if (!isSidebarCollapsed) setIsSidebarCollapsed(true);
+      } else {
+        if (isSidebarCollapsed) setIsSidebarCollapsed(false);
+        const clamped = Math.max(180, Math.min(clientX, 520));
+        setSidebarWidth(clamped);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      try {
+        localStorage.setItem('manak_sidebar_width', String(sidebarWidth));
+      } catch {}
+    };
+
+    const handleTouchMove = (e) => {
+      if (e.touches && e.touches.length > 0) {
+        handleMouseMove({ clientX: e.touches[0].clientX });
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isResizing, isSidebarCollapsed, sidebarWidth]);
+
+  const handleStartResize = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  const handleResetResize = () => {
+    setSidebarWidth(270);
+    setIsSidebarCollapsed(false);
+    try {
+      localStorage.setItem('manak_sidebar_width', '270');
+    } catch {}
+  };
+
   const handleToggleSidebar = () => {
     setIsSidebarCollapsed((prev) => {
       const next = !prev;
@@ -75,13 +142,17 @@ export default function App() {
     setActiveTab('verifier');
   };
 
+  const currentDesktopWidth = isSidebarSlidHidden ? 0 : isSidebarCollapsed ? 68 : sidebarWidth;
+
   return (
     <div
       className={`airtable-site app-layout-with-sidebar ${
         isSidebarCollapsed ? 'sidebar-collapsed' : ''
-      } ${isSidebarSlidHidden ? 'sidebar-slid-hidden' : ''}`}
+      } ${isSidebarSlidHidden ? 'sidebar-slid-hidden' : ''} ${
+        isResizing ? 'sidebar-resizing' : ''
+      }`}
     >
-      {/* 1. PERSISTENT FIXED SIDEBAR (Collapsible, Slidable, Responsive) */}
+      {/* 1. PERSISTENT FIXED SIDEBAR (Collapsible, Slidable/Resizable, Responsive) */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -90,6 +161,10 @@ export default function App() {
         onToggleCollapse={handleToggleSidebar}
         isSlidHidden={isSidebarSlidHidden}
         onToggleSlide={handleToggleSlide}
+        sidebarWidth={sidebarWidth}
+        isResizing={isResizing}
+        onStartResize={handleStartResize}
+        onResetResize={handleResetResize}
       />
 
       {/* Floating Edge Slide-In Pill when sidebar is slid off-canvas */}
@@ -106,7 +181,13 @@ export default function App() {
       )}
 
       {/* 2. MAIN SCROLLABLE CONTENT AREA */}
-      <div className="app-main-content">
+      <div
+        className="app-main-content"
+        style={{
+          marginLeft: `${currentDesktopWidth}px`,
+          width: `calc(100% - ${currentDesktopWidth}px)`
+        }}
+      >
         {/* TABBED MAIN VIEWS OR FULL EDITORIAL LANDING */}
         {activeTab === 'assistant' && (
         <>
