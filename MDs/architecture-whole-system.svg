@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Manak Mitra whole-system architecture</title>
+  <desc id="desc">Slide-ready feature-level view of channels, product experiences, the compliance intelligence platform, trusted data and official handoffs.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#172033" flood-opacity=".08"/></filter>
+    <style>
+      .title{font:700 42px Arial,sans-serif;fill:#172033}.sub{font:400 18px Arial,sans-serif;fill:#64748b}.section{font:700 13px Arial,sans-serif;letter-spacing:1.5px}.head{font:700 17px Arial,sans-serif;fill:#172033}.body{font:400 13px Arial,sans-serif;fill:#526176}.coreh{font:700 18px Arial,sans-serif;fill:#fff}.coreb{font:400 12px Arial,sans-serif;fill:#dcefe9}.foot{font:600 15px Arial,sans-serif;fill:#334155}
+    </style>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0L0,6L8,3z" fill="#b7c3d1"/></marker>
+  </defs>
+  <rect width="1600" height="900" fill="#fbfcff"/><rect width="1600" height="10" fill="#aa2d00"/>
+  <text x="55" y="65" class="title">Manak Mitra · Whole-System Architecture</text><text x="55" y="96" class="sub">One bilingual compliance intelligence platform — trusted knowledge to verified next action</text>
+  <path d="M280 425H325M735 425H785M1160 425H1210" stroke="#b7c3d1" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+
+  <text x="55" y="155" class="section" fill="#c2410c">ACCESS CHANNELS</text><rect x="55" y="180" width="225" height="470" rx="16" fill="#fff7ed" stroke="#fed7aa" stroke-width="2" filter="url(#shadow)"/>
+  <circle cx="87" cy="220" r="15" fill="#ea580c"/><text x="82" y="225" font-family="Arial" font-size="15" fill="#fff">1</text><text x="115" y="226" class="head">Web application</text><text x="80" y="258" class="body">Primary, responsive experience</text><text x="80" y="280" class="body">English · Hindi · voice</text><text x="80" y="302" class="body">Citizens · businesses · labs</text>
+  <line x1="80" y1="340" x2="255" y2="340" stroke="#fed7aa"/><circle cx="87" cy="382" r="15" fill="#ea580c"/><text x="82" y="387" font-family="Arial" font-size="15" fill="#fff">2</text><text x="115" y="388" class="head">WhatsApp assistant</text><text x="80" y="420" class="body">Optional messaging channel</text><text x="80" y="442" class="body">Same cited response service</text><text x="80" y="610" class="body">Accessible reach, one platform</text>
+
+  <text x="325" y="155" class="section" fill="#1d4ed8">PRODUCT EXPERIENCES</text><rect x="325" y="180" width="410" height="470" rx="16" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2" filter="url(#shadow)"/><text x="350" y="215" class="head">Everything the user can do</text>
+  <g fill="#fff">
+    <rect x="350" y="240" width="170" height="72" rx="10"/><rect x="540" y="240" width="170" height="72" rx="10"/><rect x="350" y="328" width="170" height="72" rx="10"/><rect x="540" y="328" width="170" height="72" rx="10"/><rect x="350" y="416" width="170" height="72" rx="10"/><rect x="540" y="416" width="170" height="72" rx="10"/><rect x="350" y="504" width="170" height="72" rx="10"/><rect x="540" y="504" width="170" height="72" rx="10"/>
+  </g>
+  <g class="head"><text x="365" y="270">AI assistant</text><text x="555" y="270">Compliance journey</text><text x="365" y="358">Compliance passport</text><text x="555" y="358">Mark verifier</text><text x="365" y="446">Schemes</text><text x="555" y="446">Testing labs + map</text><text x="365" y="534">Standards graph</text><text x="555" y="534">Ministry analytics</text></g>
+  <g class="body"><text x="365" y="291">Cited answers</text><text x="555" y="291">Readiness checklist</text><text x="365" y="379">Evidence dossier</text><text x="555" y="379">HUID · ISI · CRS</text><text x="365" y="467">Steps · fees · timing</text><text x="555" y="467">Directory + scope</text><text x="365" y="555">Connected catalogue</text><text x="555" y="555">Coverage insights</text></g>
+  <text x="350" y="620" class="body">One interface, multiple compliance tasks</text>
+
+  <text x="785" y="155" class="section" fill="#047857">MANAK MITRA INTELLIGENCE PLATFORM</text><rect x="785" y="180" width="375" height="470" rx="16" fill="#0f3d32" filter="url(#shadow)"/><text x="815" y="224" class="coreh">Compliance intelligence layer</text><text x="815" y="248" class="coreb">One evidence-aware service layer for every channel</text><line x1="815" y1="270" x2="1130" y2="270" stroke="#2f6d5c"/>
+  <rect x="815" y="295" width="315" height="70" rx="10" fill="#195747"/><text x="834" y="324" class="coreh">Request routing &amp; safety gate</text><text x="834" y="347" class="coreb">Uses the right evidence path — or safely abstains</text>
+  <rect x="815" y="385" width="145" height="96" rx="10" fill="#195747"/><text x="830" y="416" class="coreh">Standards</text><text x="830" y="439" class="coreb">Discovery and</text><text x="830" y="457" class="coreb">catalogue relevance</text>
+  <rect x="985" y="385" width="145" height="96" rx="10" fill="#195747"/><text x="1000" y="416" class="coreh">Compliance</text><text x="1000" y="439" class="coreb">QCO · passport ·</text><text x="1000" y="457" class="coreb">schemes · labs · marks</text>
+  <rect x="815" y="501" width="145" height="96" rx="10" fill="#195747"/><text x="830" y="532" class="coreh">Knowledge graph</text><text x="830" y="555" class="coreb">Relationships and</text><text x="830" y="573" class="coreb">lab matching</text>
+  <rect x="985" y="501" width="145" height="96" rx="10" fill="#195747"/><text x="1000" y="532" class="coreh">Insights</text><text x="1000" y="555" class="coreb">Aggregate usage and</text><text x="1000" y="573" class="coreb">coverage gaps</text>
+  <text x="815" y="622" class="coreb">Concise outputs · source links · clear next actions</text>
+
+  <text x="1210" y="155" class="section" fill="#6d28d9">TRUSTED KNOWLEDGE FOUNDATION</text><rect x="1210" y="180" width="335" height="470" rx="16" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="2" filter="url(#shadow)"/><text x="1235" y="215" class="head">Curated compliance knowledge</text>
+  <g fill="#fff"><rect x="1235" y="240" width="135" height="82" rx="10"/><rect x="1390" y="240" width="130" height="82" rx="10"/><rect x="1235" y="340" width="135" height="82" rx="10"/><rect x="1390" y="340" width="130" height="82" rx="10"/><rect x="1235" y="440" width="135" height="82" rx="10"/><rect x="1390" y="440" width="130" height="82" rx="10"/></g>
+  <g class="head"><text x="1248" y="270">QCO + products</text><text x="1403" y="270">Standards</text><text x="1248" y="370">Schemes</text><text x="1403" y="370">Labs + scope</text><text x="1248" y="470">Mark rules + OCR</text><text x="1403" y="470">Relationship graph</text></g>
+  <g class="body"><text x="1248" y="293">Mandatory evidence</text><text x="1403" y="293">23,573 catalogue</text><text x="1248" y="393">Steps and fees</text><text x="1403" y="393">BIS LIMS data</text><text x="1248" y="493">HUID · ISI · CRS</text><text x="1403" y="493">Product ↔ lab links</text></g><text x="1235" y="620" class="body">Source-linked, curated local knowledge</text>
+
+  <rect x="55" y="710" width="1490" height="125" rx="16" fill="#fff" stroke="#dbe2ea" stroke-width="2" filter="url(#shadow)"/><text x="82" y="746" class="section" fill="#475569">TRUST, GOVERNANCE &amp; OFFICIAL HANDOFF</text>
+  <text x="82" y="786" class="foot">Evidence-gated answers</text><text x="82" y="810" class="body">Discovery is not automatically a legal conclusion</text><text x="465" y="786" class="foot">Safe abstention</text><text x="465" y="810" class="body">Unsupported questions go to BIS guidance</text><text x="815" y="786" class="foot">Official verification</text><text x="815" y="810" class="body">BIS · LIMS · e-Gazette · BIS CARE</text><text x="1175" y="786" class="foot">Continuous improvement</text><text x="1175" y="810" class="body">Aggregate outcomes reveal coverage gaps</text>
+  <text x="55" y="870" font-family="Arial" font-size="12" fill="#94a3b8">Manak Mitra · SIH 2026 · Feature-level architecture (not a deployment diagram)</text>
+</svg>
