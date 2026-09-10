@@ -98,7 +98,12 @@ export default function CompliancePassport({ initialProduct = '' }) {
     {state === 'error' && <div className="feature-alert error"><ShieldAlert size={20} />{error}</div>}
 
     {result?.status === 'needs_disambiguation' && <section className="passport-choice-panel"><h2>Confirm the regulated product</h2><p>{result.reason}</p><div className="candidate-grid">{result.candidates?.map((item) => <button className="passport-choice" key={item.id} onClick={() => lookup(input, item.id)}><span className="candidate-standard">{item.is_number}</span><strong>{item.product_desc}</strong><small>{item.scheme || 'Scheme not listed'} · Effective {item.effective_on || 'date not listed'}</small><span className="candidate-qco">{item.qco_title}</span><ArrowRight size={16} /></button>)}</div></section>}
-    {result?.status === 'no_verified_match' && <div className="feature-alert warning"><ShieldAlert size={20} /><div><strong>No compliance decision issued</strong><span>{result.reason}</span></div></div>}
+    {result?.status === 'no_verified_match' && <section className="passport-no-match-panel">
+      <div className="no-match-verdict"><ShieldAlert size={23} /><div><span>SAFE ABSTENTION</span><h2>No catalogue decision issued</h2><p>{result.reason}</p></div></div>
+      <div className="no-match-metrics"><div><strong>{result.search_diagnostics?.catalogue?.mandatory_products?.toLocaleString?.() || 0}</strong><span>mandatory products checked</span></div><div><strong>{result.search_diagnostics?.catalogue?.standards?.toLocaleString?.() || 0}</strong><span>standards searchable</span></div><div><strong>0</strong><span>unsupported claims made</span></div></div>
+      {result.suggestions?.length > 0 && <div className="no-match-suggestions"><span>CLOSE CATALOGUE TERMS — CONFIRM BEFORE USE</span><div>{result.suggestions.map((item) => <button key={`${item.id}-${item.is_number}`} onClick={() => lookup(item.product_desc, item.id)}><strong>{item.product_desc}</strong><small>{item.is_number} · {Math.round(item.suggestion_score * 100)}% lexical similarity</small><ArrowRight size={14} /></button>)}</div></div>}
+      <div className="no-match-guidance"><div><strong>Try a recognised identifier</strong><span>{result.search_diagnostics?.accepted_inputs?.join(' · ')}</span></div><ol>{result.next_actions?.map((action) => <li key={action}>{action}</li>)}</ol></div>
+    </section>}
     {result?.status === 'research_only' && <div className="feature-alert info"><FileCheck2 size={20} /><div><strong>Standard found—QCO link not confirmed</strong><span>{result.reason} {result.standard?.is_number} — {result.standard?.title}</span></div></div>}
 
     {verified && <article className="passport-dossier">

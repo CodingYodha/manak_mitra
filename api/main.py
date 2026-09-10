@@ -38,6 +38,28 @@ STT_UPSTREAM_HTTP = os.environ.get("REALTIMESTT_URL", "http://127.0.0.1:8010").r
 MAX_STT_AUDIO_BYTES = int(os.environ.get("MAX_STT_AUDIO_BYTES", 16000 * 2 * 120))
 
 
+def _normalize_stt_domain_text(value: str) -> str:
+    """Correct conservative, known ASR spellings for BIS terminology."""
+    text = " ".join(str(value or "").split())
+    replacements = (
+        (r"\bB[. ]*I[. ]*S[.]?\b", "BIS"),
+        (r"\bQ[. ]*C[. ]*O[.]?\b", "QCO"),
+        (r"\bC[. ]*M\s*/?\s*L\b", "CM/L"),
+        (r"\bH[. ]*U[. ]*I[. ]*D[.]?\b", "HUID"),
+        (r"बी\s*आई\s*एस", "BIS"),
+        (r"एल\s*ई\s*डी", "LED"),
+        (r"क्यू\s*सी\s*ओ", "QCO"),
+        (r"एच\s*यू\s*आई\s*डी", "HUID"),
+        (r"वात", "वाट"),
+        (r"बल्ग", "बल्ब"),
+        (r"प्रमानन", "प्रमाणन"),
+        (r"अनिवारे", "अनिवार्य"),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
+
+
 @app.get("/api/stt/status")
 async def stt_status():
     """Report optional local RealtimeSTT readiness without blocking the assistant."""
@@ -103,7 +125,7 @@ async def stt_websocket_proxy(client_socket: WebSocket):
     async def emit_preview(client, pcm_snapshot):
         try:
             result = await transcribe(client, pcm_snapshot, 1)
-            text = str(result.get("text") or "").strip()
+            text = _normalize_stt_domain_text(result.get("text") or "")
             if text:
                 await send({
                     "type": "realtime",
@@ -117,7 +139,7 @@ async def stt_websocket_proxy(client_socket: WebSocket):
             return
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30, connect=2)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(75, connect=2)) as client:
             readiness = await client.get(f"{STT_UPSTREAM_HTTP}/api/v1/ready")
             readiness.raise_for_status()
             await send({"type": "hello", "capabilities": {"languages": ["auto", "en", "hi"]}})
@@ -140,16 +162,16 @@ async def stt_websocket_proxy(client_socket: WebSocket):
                         return
                     elif command_type == "finalize":
                         if preview_task is not None:
-                            await asyncio.gather(preview_task, return_exceptions=True)
+                            preview_task.cancel()
                         if not audio:
                             await send({"type": "error", "code": "empty_audio", "message": "No speech was detected."})
                             await send({"type": "completion", "turnId": turn_id})
                             return
-                        result = await transcribe(client, bytes(audio), 3)
+                        result = await transcribe(client, bytes(audio), 5)
                         await send({
                             "type": "final",
                             "turnId": turn_id,
-                            "text": str(result.get("text") or "").strip(),
+                            "text": _normalize_stt_domain_text(result.get("text") or ""),
                             "detectedLanguage": result.get("detected_language") or language,
                             "languageProbability": result.get("language_probability"),
                             "inferenceMs": round(float(result.get("elapsed_seconds") or 0) * 1000),
@@ -185,8 +207,9 @@ async def stt_websocket_proxy(client_socket: WebSocket):
                     return
                 audio.extend(pcm)
 
-                # Refresh the transcript at roughly 1.2 second audio intervals.
-                preview_interval = 38400
+                # Do not spend the large model on partials for short questions;
+                # one preview begins after six seconds, preserving fast finals.
+                preview_interval = 192000
                 if len(audio) >= preview_interval and (
                     preview_task is None or preview_task.done()
                 ):
@@ -739,7 +762,7 @@ async def verify_mark_endpoint(
     """
     if file:
         content = await file.read()
-        return marks.extract_mark_from_image(content)
+        return marks.extract_mark_from_image(content, expected_type=mark_type or "auto", purity=purity)
 
     if code:
         return marks.verify_mark(code=code, mark_type=mark_type or "auto", purity=purity)

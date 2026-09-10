@@ -30,8 +30,10 @@ export default function MarkVerifier() {
     setState('loading'); setError(''); setResult(null);
     try {
       const form = new FormData();
+      form.append('mark_type', markType);
+      if (markType === 'huid') form.append('purity', purity);
       if (file) form.append('file', file);
-      else { form.append('code', nextCode.trim()); form.append('mark_type', markType); form.append('purity', purity); }
+      else form.append('code', nextCode.trim());
       const response = await fetch(apiUrl('/verify/mark'), { method: 'POST', body: form });
       if (!response.ok) throw new Error(`Verification service returned HTTP ${response.status}.`);
       const data = await response.json();

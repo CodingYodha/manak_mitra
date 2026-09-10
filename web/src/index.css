@@ -3415,6 +3415,29 @@ h1, h2, h3, h4, h5, h6 {
 .input-with-icon input { width: 100%; border: 0; outline: 0; color: #0f172a; font: inherit; font-size: 13px; }
 .passport-choice-panel { padding: 24px; border: 1px solid #e2e8f0; border-radius: 14px; }
 .passport-choice-panel h2 { font-size: 20px; }
+.passport-no-match-panel { overflow: hidden; margin-top: 18px; border: 1px solid #fed7aa; border-radius: 15px; background: #fff; box-shadow: 0 14px 40px rgba(15,23,42,.06); }
+.no-match-verdict { display: flex; gap: 13px; padding: 20px 22px; color: #9a3412; background: linear-gradient(120deg,#fff7ed,#fffbeb); }
+.no-match-verdict > div > span, .no-match-suggestions > span { color: #c2410c; font-size: 9.5px; font-weight: 850; letter-spacing: .1em; }
+.no-match-verdict h2 { margin: 3px 0 4px; color: #431407; font-size: 19px; }
+.no-match-verdict p { color: #7c2d12; font-size: 12px; }
+.no-match-metrics { display: grid; grid-template-columns: repeat(3,1fr); border-top: 1px solid #ffedd5; border-bottom: 1px solid #e2e8f0; }
+.no-match-metrics > div { padding: 14px 18px; border-right: 1px solid #e2e8f0; }
+.no-match-metrics > div:last-child { border-right: 0; }
+.no-match-metrics strong, .no-match-metrics span { display: block; }
+.no-match-metrics strong { color: #0f172a; font-size: 20px; }
+.no-match-metrics span { color: #64748b; font-size: 9.5px; margin-top: 2px; }
+.no-match-suggestions, .no-match-guidance { padding: 16px 20px; }
+.no-match-suggestions > div { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.no-match-suggestions button { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; min-width: 220px; padding: 9px 11px; text-align: left; border: 1px solid #dbeafe; border-radius: 9px; background: #f8fbff; cursor: pointer; }
+.no-match-suggestions button:hover { border-color: #60a5fa; }
+.no-match-suggestions button strong { color: #1e293b; font-size: 11px; }
+.no-match-suggestions button small { color: #64748b; font-size: 9px; }
+.no-match-suggestions button svg { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #2563eb; }
+.no-match-guidance { display: grid; grid-template-columns: .8fr 1.2fr; gap: 20px; padding-top: 4px; }
+.no-match-guidance strong, .no-match-guidance span { display: block; }
+.no-match-guidance strong { color: #1e293b; font-size: 11px; }
+.no-match-guidance span, .no-match-guidance li { color: #64748b; font-size: 10px; line-height: 1.55; }
+.no-match-guidance ol { margin: 0; padding-left: 18px; }
 .passport-choice-panel > p { color: #64748b; font-size: 13px; margin: 5px 0 15px; }
 .candidate-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
 .candidate-grid .passport-choice { position: relative; margin: 0; min-height: 140px; padding-right: 38px; }
@@ -3679,6 +3702,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .realtime-stt-status strong { color: #1e3a5f; font-weight: 650; }
+.voice-language-select { width: 52px; flex: 0 0 52px; border: 0; border-right: 1px solid #e2e8f0; outline: 0; background: transparent; color: #475569; font-size: 10.5px; font-weight: 750; cursor: pointer; }
+.voice-language-select:disabled { cursor: default; opacity: .55; }
 .realtime-stt-status small { color: #15803d; font-weight: 700; }
 .realtime-stt-status.error { border-color: #fecaca; background: #fff7f7; }
 .realtime-stt-status.error strong { color: #b91c1c; }
@@ -3698,4 +3723,6 @@ h1, h2, h3, h4, h5, h6 {
 
 @media (max-width: 640px) {
   .voice-engine-label { display: none; }
+  .no-match-metrics, .no-match-guidance { grid-template-columns: 1fr; }
+  .no-match-metrics > div { border-right: 0; border-bottom: 1px solid #e2e8f0; }
 }

@@ -2,7 +2,7 @@
 
 import unittest
 
-from api.marks import _is_ocr_huid_candidate, detect_mark_type, verify_huid
+from api.marks import _is_ocr_huid_candidate, detect_mark_type, verify_huid, verify_mark
 
 
 class MarkOcrRulesTest(unittest.TestCase):
@@ -16,6 +16,13 @@ class MarkOcrRulesTest(unittest.TestCase):
         self.assertFalse(_is_ocr_huid_candidate("ASSEYI"))
         self.assertFalse(_is_ocr_huid_candidate("22K916"))
         self.assertTrue(_is_ocr_huid_candidate("A1B2C3"))
+
+    def test_each_manual_pipeline_has_its_own_grammar(self):
+        self.assertEqual(verify_mark("A1B2C3", "huid")["status"], "structurally_plausible")
+        self.assertEqual(verify_mark("A1B2C3", "isi")["status"], "invalid")
+        self.assertEqual(verify_mark("CM/L-1234567", "isi")["code"], "CM/L-1234567")
+        self.assertEqual(verify_mark("CM/L-1234567", "crs")["status"], "invalid")
+        self.assertEqual(verify_mark("R-41001234", "crs")["code"], "R-41001234")
 
 
 if __name__ == "__main__":

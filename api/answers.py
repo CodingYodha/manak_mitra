@@ -315,11 +315,27 @@ def passport(product: str, candidate_id: Optional[int] = None, city: str = "") -
                 "candidates": candidates,
                 "citations": [{"kind": "standard", "ref": explicit_standard["is_number"], "title": explicit_standard["title"], "url": explicit_standard.get("purchase_url", ""), "status": explicit_standard.get("status", "")}]
             }
+        catalogue_stats = store.get_stats()
         return {
             "status": "needs_disambiguation" if candidates else "no_verified_match",
             "product": product,
             "reason": "Select a matching regulated product before generating a compliance decision." if candidates else "No exact regulated-product match was found. Refine the product name, HSN, or IS number.",
             "candidates": candidates,
+            "suggestions": [] if candidates else store.passport_suggestions(product),
+            "search_diagnostics": {
+                "input_received": product,
+                "decision_withheld": True,
+                "accepted_inputs": ["Product or category", "Indian Standard number", "HSN code"],
+                "catalogue": {
+                    "mandatory_products": catalogue_stats.get("mandatory_products_indexed", 0),
+                    "standards": catalogue_stats.get("standards_in_db", 0),
+                },
+            },
+            "next_actions": [
+                "Use the generic product name instead of a brand or model",
+                "Enter an IS number such as IS 16102 or a valid HSN code",
+                "Choose a close catalogue suggestion only if it describes the product",
+            ],
             "citations": []
         }
 

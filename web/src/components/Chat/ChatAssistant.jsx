@@ -349,6 +349,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
   const [voiceStatus, setVoiceStatus] = useState({ state: 'idle', label: '' });
   const [voiceLatency, setVoiceLatency] = useState(null);
   const [voiceDraftLanguage, setVoiceDraftLanguage] = useState(null);
+  const [speechLanguage, setSpeechLanguage] = useState('auto');
   const [sttAvailable, setSttAvailable] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [conversationId, setConversationId] = useState(null);
@@ -708,7 +709,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
     try {
       const recognition = new SpeechRecognition();
       browserRecognitionRef.current = recognition;
-      recognition.lang = /[\u0900-\u097F]/.test(input) ? 'hi-IN' : 'en-IN';
+      recognition.lang = speechLanguage === 'hi' ? 'hi-IN' : speechLanguage === 'en' ? 'en-IN' : (/[ऀ-ॿ]/.test(input) ? 'hi-IN' : 'en-IN');
       recognition.interimResults = false;
       recognition.onstart = () => {
         setIsListening(true);
@@ -753,7 +754,7 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
     setIsListening(true);
     try {
       voiceSessionRef.current = await startRealtimeStt({
-        language: 'auto',
+        language: speechLanguage,
         onPartial: ({ text, language }) => {
           setInput(text);
           if (language && language !== 'auto') setVoiceDraftLanguage(language);
@@ -1196,6 +1197,18 @@ export default function ChatAssistant({ onSelectNode, onViewPassport, initialQue
 
           {/* Input Box */}
           <div className="chatgpt-input-box">
+            <select
+              className="voice-language-select"
+              value={speechLanguage}
+              onChange={(event) => setSpeechLanguage(event.target.value)}
+              disabled={isListening}
+              title="Choose a language for maximum speech accuracy"
+              aria-label="Speech recognition language"
+            >
+              <option value="auto">Auto</option>
+              <option value="en">EN</option>
+              <option value="hi">हिं</option>
+            </select>
             <button
               className={`chatgpt-input-action-btn mic ${isListening ? 'listening' : ''}`}
               onClick={toggleVoice}

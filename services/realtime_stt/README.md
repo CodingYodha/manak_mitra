@@ -13,9 +13,13 @@ brew install python@3.12 portaudio
 ./services/realtime_stt/start.sh
 ```
 
-The first start downloads multilingual `tiny` and `base` faster-whisper models
-into `services/realtime_stt/models/`. Override them with
-`REALTIMESTT_REALTIME_MODEL` and `REALTIMESTT_FINAL_MODEL`.
+The first start downloads the multilingual `large-v3-turbo` faster-whisper
+model into `services/realtime_stt/models/`. It is shared by preview and final
+decoding to avoid duplicate model memory, uses beam search for the final pass,
+and receives a BIS-domain vocabulary prompt. Override it with
+`REALTIMESTT_FINAL_MODEL`; `large-v3` trades considerably more latency for the
+largest local Whisper checkpoint. The UI also lets users lock English or Hindi,
+which is more accurate than auto-detection for short utterances.
 
 The assistant automatically falls back to the browser SpeechRecognition API
 when the local service is stopped or unavailable. Microphone capture requires a

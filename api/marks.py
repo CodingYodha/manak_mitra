@@ -370,7 +370,11 @@ def _preprocess_image_for_ocr(image):
     return image
 
 
-def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
+def extract_mark_from_image(
+    image_bytes: bytes,
+    expected_type: str = "auto",
+    purity: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Extracts a BIS mark (HUID / ISI / CRS) from an uploaded photo using a multi-pass
     tesseract OCR pipeline with image preprocessing.
@@ -442,8 +446,42 @@ def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
         logger.info(f"OCR Pass-1 text: {full_text_p1!r}")
         logger.info(f"OCR Pass-2 text: {full_text_p2!r}")
 
+        requested_type = (expected_type or "auto").strip().lower()
+        aliases = {
+            "gold": "huid", "hallmark": "huid", "cml": "isi",
+            "licence": "isi", "license": "isi", "r_number": "crs",
+            "electronics": "crs",
+        }
+        requested_type = aliases.get(requested_type, requested_type)
+        if requested_type not in {"auto", "huid", "isi", "crs"}:
+            requested_type = "auto"
+
+        context_upper = full_text_combined.upper()
+        isi_context = bool(re.search(r"CM\s*/?\s*L|\bISI\b|STANDARD\s+MARK", context_upper))
+        crs_context = bool(re.search(r"\bR\s*[-:]?\s*\d|\bCRS\b|CRSBIS|SELF.DECLARATION", context_upper))
+
         # ── Candidate assembly ───────────────────────────────────────────────
         candidates: List[Dict[str, Any]] = []
+
+        def add_candidate(text: str, original: str, conf: float, mark_kind: str, contextual: bool = False):
+            """Keep candidate selection scoped to the chosen regulatory mark."""
+            if requested_type not in {"auto", mark_kind}:
+                return
+            if requested_type == "auto":
+                required_context = {
+                    "huid": hallmark_context,
+                    "isi": isi_context,
+                    "crs": crs_context,
+                }[mark_kind]
+                if not required_context:
+                    return
+            candidates.append({
+                "text": text,
+                "original": original,
+                "conf": min(99.0, conf + (8.0 if contextual else 0.0)),
+                "type": mark_kind,
+                "contextual": contextual,
+            })
 
         for tok in all_tokens:
             clean = tok["text"]
@@ -451,13 +489,17 @@ def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
             original = tok["original"]
 
             if _is_ocr_huid_candidate(clean):
-                candidates.append({"text": clean, "original": original, "conf": conf})
+                add_candidate(clean, original, conf, "huid", hallmark_context)
             elif len(clean) == 7 and clean.isdigit():
-                candidates.append({"text": clean, "original": original, "conf": conf, "type": "isi"})
+                add_candidate(clean, original, conf, "isi", isi_context)
             elif len(clean) == 8 and clean.isdigit():
-                candidates.append({"text": clean, "original": original, "conf": conf, "type": "crs"})
+                add_candidate(clean, original, conf, "crs", crs_context)
             elif clean.startswith("CML") or original.upper().startswith("CM/L"):
-                candidates.append({"text": original.upper(), "original": original, "conf": conf, "type": "isi"})
+                digits = re.sub(r"\D", "", clean)
+                if len(digits) == 7:
+                    add_candidate(digits, original, conf, "isi", True)
+            elif clean.startswith("R") and len(re.sub(r"\D", "", clean)) == 8:
+                add_candidate(re.sub(r"\D", "", clean), original, conf, "crs", True)
 
         # Also try sliding-window concatenation of adjacent tokens to catch
         # split tokens like "22K" + "916" → "22K916"
@@ -466,30 +508,29 @@ def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
             merged = clean_tokens[j]["text"] + clean_tokens[j + 1]["text"]
             if _is_ocr_huid_candidate(merged):
                 avg_conf = (clean_tokens[j]["conf"] + clean_tokens[j + 1]["conf"]) / 2
-                candidates.append({"text": merged, "original": merged, "conf": avg_conf})
+                add_candidate(merged, merged, avg_conf, "huid", hallmark_context)
             elif len(merged) == 7 and merged.isdigit():
                 avg_conf = (clean_tokens[j]["conf"] + clean_tokens[j + 1]["conf"]) / 2
-                candidates.append({"text": merged, "original": merged, "conf": avg_conf, "type": "isi"})
+                add_candidate(merged, merged, avg_conf, "isi", isi_context)
             elif len(merged) == 8 and merged.isdigit():
                 avg_conf = (clean_tokens[j]["conf"] + clean_tokens[j + 1]["conf"]) / 2
-                candidates.append({"text": merged, "original": merged, "conf": avg_conf, "type": "crs"})
+                add_candidate(merged, merged, avg_conf, "crs", crs_context)
 
         # ── Pass 3: regex search over concatenated full text ─────────────────
-        combined_upper = re.sub(r"[^A-Z0-9]", "", full_text_combined.upper())
-        cml_matches = re.findall(r"(?:CML)?(\d{7})", combined_upper)
-        crs_matches = re.findall(r"(?:R)?(\d{8})", combined_upper)
+        cml_matches = re.findall(r"CM\s*/?\s*L\s*[-:]?\s*(\d{7})(?!\d)", context_upper)
+        crs_matches = re.findall(r"\bR\s*[-:]?\s*(\d{8})(?!\d)", context_upper)
         huid_matches = re.findall(
             r"(?<![0-9A-Z])[0-9A-Z]{6}(?![0-9A-Z])",
             full_text_combined.upper(),
         )
 
         for m in cml_matches:
-            candidates.append({"text": m, "original": m, "conf": 40.0, "type": "isi"})
+            add_candidate(m, m, 55.0, "isi", True)
         for m in crs_matches:
-            candidates.append({"text": m, "original": m, "conf": 40.0, "type": "crs"})
+            add_candidate(m, m, 55.0, "crs", True)
         for m in huid_matches:
             if _is_ocr_huid_candidate(m):
-                candidates.append({"text": m, "original": m, "conf": 40.0})
+                add_candidate(m, m, 40.0, "huid", hallmark_context)
 
         if not candidates:
             purity_marks = sorted({
@@ -497,7 +538,7 @@ def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
                 if token["text"] in VALID_PURITY_MARKS
             })
             detected_purity = purity_marks[0] if purity_marks else None
-            if detected_purity:
+            if detected_purity and requested_type in {"auto", "huid"}:
                 return {
                     "status": "incomplete",
                     "valid": False,
@@ -529,21 +570,33 @@ def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
                     ],
                     "ocr_text": full_text_combined,
                 }
+            type_guidance = {
+                "huid": ("a separate 6-character mixed-letter-and-number HUID", "BIS CARE app"),
+                "isi": ("a 7-digit CM/L manufacturer licence", "MANAK Online licence search"),
+                "crs": ("an 8-digit R-number", "CRS product registry"),
+                "auto": ("a 6-character HUID, 7-digit CM/L licence, or 8-digit CRS number", "relevant BIS registry"),
+            }[requested_type]
             return {
                 "status": "not_detected",
                 "valid": False,
                 "verified": False,
-                "mark_type": "Image OCR Scan",
+                "mark_type": {
+                    "huid": "Gold Hallmark HUID",
+                    "isi": "ISI Standard Mark (Scheme-I)",
+                    "crs": "CRS Registration (Scheme-II)",
+                    "auto": "Image OCR Scan",
+                }[requested_type],
                 "code": "Not detected",
                 "confidence": 0.0,
                 "ocr_text": full_text_combined or "No text recognized",
                 "reason": (
-                    "Could not detect a clear 6-character HUID, 7-digit CM/L licence, or 8-digit CRS number "
-                    "from the image. Ensure the mark is well-lit, in focus, and fills most of the frame. "
-                    "Note: Pre-2021 hallmarks do not contain HUID codes."
+                    f"Could not detect {type_guidance[0]} in this image. The {requested_type.upper()} "
+                    "scanner ignored unrelated identifiers. Ensure the code is well-lit, in focus, horizontal, "
+                    "and fills most of the frame."
                 ),
-                "disclaimer": "Absence of a HUID in old hallmarks does not imply it is counterfeit.",
-                "official_handoff": "Upload a higher-resolution photo or check manually in the BIS CARE app.",
+                "disclaimer": "A failed OCR read is not evidence that a product or mark is counterfeit.",
+                "official_handoff": f"Upload a closer image, enter the identifier manually, or use the {type_guidance[1]}.",
+                "evidence": {"selected_pipeline": requested_type, "ocr_text_detected": bool(full_text_combined)},
                 "citations": []
             }
 
@@ -564,9 +617,18 @@ def extract_mark_from_image(image_bytes: bytes) -> Dict[str, Any]:
         elif best.get("type") == "crs":
             res = verify_crs(best["text"], ocr_confidence=best["conf"])
         else:
-            res = verify_huid(best["text"], ocr_confidence=best["conf"], hallmark_context=hallmark_context)
+            detected_purity = next(
+                (token["text"][-3:] for token in all_tokens if token["text"] in VALID_PURITY_MARKS),
+                None,
+            )
+            res = verify_huid(
+                best["text"], purity=purity or detected_purity,
+                ocr_confidence=best["conf"], hallmark_context=hallmark_context,
+            )
 
         res["ocr_text"] = full_text_combined.strip()
+        res.setdefault("evidence", {})["selected_pipeline"] = best.get("type", "huid")
+        res["evidence"]["context_matched"] = bool(best.get("contextual"))
         return res
         
     except ImportError:

@@ -14,6 +14,7 @@ import json
 import pathlib
 import datetime
 import re
+from difflib import SequenceMatcher
 from typing import List, Dict, Any, Optional
 
 DB = pathlib.Path(__file__).parent.parent / "manak.db"
@@ -131,6 +132,9 @@ def passport_candidates(query: str, limit: int = 8) -> List[Dict[str, Any]]:
         exact = False
         if normalized_is and normalized_is == re.sub(r"[^A-Z0-9]", "", (row.get("is_number") or "").upper()):
             score, exact = 1.0, True
+        elif normalized_is.startswith("IS") and len(normalized_is) >= 6 and re.sub(r"[^A-Z0-9]", "", (row.get("is_number") or "").upper()).startswith(normalized_is):
+            # A base IS number may legitimately resolve to a stored Part.
+            score = 0.96
         elif digits_only and len(digits_only) >= 4 and any(digits_only == re.sub(r"\D", "", hsn) for hsn in re.split(r"[,;/\\s]+", row.get("hsn_codes") or "") if hsn):
             score, exact = 0.98, True
         elif query_terms and product_terms:
@@ -153,6 +157,45 @@ def passport_candidates(query: str, limit: int = 8) -> List[Dict[str, Any]]:
     seen = set()
     for item in ranked:
         key = (item.get("qco_id"), item.get("is_number"), item.get("product_desc"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique[:limit]
+
+
+def passport_suggestions(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """Return typo-tolerant catalogue suggestions without issuing a verdict."""
+    normalized_query = " ".join(re.findall(r"[a-z0-9]+", (query or "").lower()))
+    if len(normalized_query) < 3:
+        return []
+    with conn() as c:
+        rows = [dict(row) for row in c.execute("""
+            SELECT i.id, i.product_desc, i.category, i.is_number, i.scheme,
+                   i.effective_on, q.title AS qco_title
+            FROM qco_items i LEFT JOIN qco q ON q.qco_id = i.qco_id
+        """).fetchall()]
+
+    suggestions = []
+    query_terms = _terms(normalized_query)
+    for row in rows:
+        product = " ".join(re.findall(r"[a-z0-9]+", (row.get("product_desc") or "").lower()))
+        if not product:
+            continue
+        product_terms = _terms(product)
+        phrase_score = SequenceMatcher(None, normalized_query, product).ratio()
+        word_score = max(
+            (SequenceMatcher(None, query_word, product_word).ratio()
+             for query_word in query_terms for product_word in product_terms),
+            default=0.0,
+        )
+        score = max(phrase_score, word_score * 0.86)
+        if score >= 0.66:
+            row["suggestion_score"] = round(score, 3)
+            suggestions.append(row)
+    suggestions.sort(key=lambda item: item["suggestion_score"], reverse=True)
+    unique, seen = [], set()
+    for item in suggestions:
+        key = (item.get("product_desc"), item.get("is_number"))
         if key not in seen:
             seen.add(key)
             unique.append(item)
