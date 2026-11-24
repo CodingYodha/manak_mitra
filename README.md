@@ -1,16 +1,24 @@
+<div align="center">
+
 # 🇮🇳 Manak Mitra (मानक मित्र)
 ### AI-Powered Intelligent Assistant for Bureau of Indian Standards (BIS)
 **Smart India Hackathon (SIH) 2026** · **Problem Statement ID: PS 26107**  
 *Ministry of Consumer Affairs, Food & Public Distribution*
 
----
+<br/>
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Sentence Transformers](https://img.shields.io/badge/Sentence--Transformers-Multilingual--MiniLM-orange.svg)](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2)
-[![Ollama](https://img.shields.io/badge/Ollama-Qwen2.5:3B-blueviolet.svg)](https://ollama.com)
-[![Bhashini](https://img.shields.io/badge/Bhashini-ULCA%20Supported-green.svg)](https://bhashini.gov.in)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Sentence Transformers](https://img.shields.io/badge/Sentence_Transformers-MiniLM-orange?style=for-the-badge&logo=huggingface&logoColor=white)](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2)
+[![Ollama](https://img.shields.io/badge/Ollama-Qwen2.5--3B-8A2BE2?style=for-the-badge)](https://ollama.com)
+[![Bhashini](https://img.shields.io/badge/Bhashini-ULCA_Voice-16A34A?style=for-the-badge)](https://bhashini.gov.in)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
+
+<br/>
+
+[Overview](#-executive-summary) • [Key Features](#-key-features) • [Architecture](#-system-architecture) • [Getting Started](#-getting-started) • [Contributing](CONTRIBUTING.md)
+
+</div>
 
 ---
 
@@ -299,5 +307,5 @@ python eval/score.py
 ---
 
 <div align="center">
-  <sub>Built with pride for Smart India Hackathon 2026 · Team CodingYodha</sub>
+  <sub>Built with pride for Smart India Hackathon 2026 · Team BlueBerry</sub>
 </div>

@@ -51,7 +51,7 @@ export default function Footer({ onNavigate }) {
 
         <div className="footer-bottom">
           <div>
-            © 2026 Manak Mitra · Smart India Hackathon (SIH 2026) · Problem Statement ID: <strong>PS 26107</strong> · Team CodingYodha
+            © 2026 Manak Mitra · Smart India Hackathon (SIH 2026) · Problem Statement ID: <strong>PS 26107</strong> · Team BlueBerry
           </div>
           <div style={{ display: 'flex', gap: '16px' }}>
             <span>No Authentication Required</span>

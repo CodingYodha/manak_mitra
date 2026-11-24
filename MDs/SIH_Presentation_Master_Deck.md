@@ -402,7 +402,7 @@ The live demo is scripted to showcase technical depth, user empathy, and regulat
 - **Subtitle:** AI-Powered Intelligent Assistant for Indian Standards & BIS Services
 - **Meta Badge:** Smart India Hackathon 2026 · Problem Statement ID: PS 26107
 - **Ministry:** Ministry of Consumer Affairs, Food & Public Distribution | Bureau of Indian Standards (BIS)
-- **Presenter Team:** Team CodingYodha
+- **Presenter Team:** Team BlueBerry
 - **Visual Prompt:** High-tech digital emblem combining the Bureau of Indian Standards Tri-color emblem, an AI neural network mesh, and a golden verification checkmark.
 
 ---
